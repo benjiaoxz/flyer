@@ -1,0 +1,12 @@
+{ 
+    "name": "Progressive Times web app",
+    "short_name": "Progressive Times",
+    "start_url": "/api/user",
+    "display": "standalone",
+    "description": "应用描述",
+    "orientation": "natural",
+    "prefer_related_applications": false,
+    "theme_color": "#FFDF00",
+    "background_color": "#FFDF00",
+    "scope": "/"
+}

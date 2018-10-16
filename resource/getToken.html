@@ -1,0 +1,39 @@
+<div>
+    <form>
+        <input type="text" name="name" value="test" readonly />
+        <button id="sub">submit</button>
+    </form>
+</div>
+<script>
+    window.onload = function() {
+        const form = document.getElementsByTagName('form')[0]
+
+        form.addEventListener('submit', function(e) {
+            e.preventDefault()
+            e.stopPropagation()
+        })
+
+        const sub = document.getElementById('sub')
+        
+        sub.addEventListener('click', function(e) {
+            e.preventDefault()
+            e.stopPropagation()
+
+            const data = document.getElementsByName('name')[0].value
+
+            fetch('/api/signToken', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: data
+                }),
+                credentials: 'same-origin'
+            })
+            .then(res => {
+                return res.json()
+            })
+            .then(data => {
+                localStorage.setItem('token', data.token)
+            })
+        })
+    }
+</script>

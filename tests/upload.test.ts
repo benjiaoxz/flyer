@@ -16,7 +16,7 @@ import type { SkillManifest, SkillResult } from "../src/types/index.js";
 class TableSkill extends BaseSkill {
   readonly manifest: SkillManifest = {
     id: "table", name: "表格技能", description: "表格处理测试",
-    intents: ["new_request", "table_do"],
+    intents: ["new_request", "table_do", "catalog_add_batch"], // 无文字+表格 → 确定性路由 add_batch
     trigger_keywords: ["表格", "批量", "上架", "调整"],
   };
   handle(state: any): SkillResult {

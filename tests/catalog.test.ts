@@ -479,6 +479,33 @@ describe("catalog 表格附件（table_text 一次打包）", () => {
     expect(products[0].price).toBe(259);
     expect(products[0].status).toBe("off_sale");
   });
+
+  it("表格状态列驱动：'下架' → 商品被下架（无文字表格驱动）", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[0] = { id: 1, shop_id: 1, name: "Nike 鞋", price: 299, stock: 50, status: "on_sale" };
+    const csv = "名称,价格,库存,状态\nNike 鞋,259,40,下架";
+    const r = await skill.handle(
+      { user_text: "", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_add_batch", params: {} } as never,
+      "",
+    );
+    expect(r.status).toBe("success");
+    expect(products[0].price).toBe(259);
+    expect(products[0].status).toBe("off_sale"); // 状态列"下架"生效
+  });
+
+  it("价格为 0 的行不算缺价格（0 是合法值）", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\n零价鞋,0";
+    const r = await skill.handle(
+      { user_text: "批量上架", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_add_batch", params: {} } as never,
+      "批量上架",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 1 条");
+    expect(products.find((p) => p.name === "零价鞋")?.price).toBe(0);
+  });
 });
 
 describe("catalog 上传文件批量上架", () => {
@@ -508,5 +535,26 @@ describe("catalog 上传文件批量上架", () => {
     expect(r.status).toBe("success");
     expect(r.output).toContain("成功 1 条");
     expect(products.some((p) => p.name === "上传鞋A")).toBe(true);
+  });
+
+  it("Excel 表头不在第一行（标题行/合并单元格）→ 仍能定位表头并批量上架", async () => {
+    const { parseExcelFile } = await import("../src/tools/excel.js");
+    const XLSX = require("xlsx") as typeof import("xlsx");
+    // 模拟用户真实表格：第一行是标题"表格 1"，第二行才是表头（名称/价格/库存/状态）
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["表格 1"],
+      ["", "名称", "价格", "库存", "状态"],
+      ["", "标题表鞋A", 120, 12, "上架"],
+      ["", "标题表鞋B", 220, 22, "上架"],
+    ]);
+    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }]; // 标题行合并单元格
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+    const buf = XLSX.write(wb, { type: "buffer" }) as Buffer;
+    const t = parseExcelFile(buf);
+    expect(t.headers).toContain("名称");
+    expect(t.headers).toContain("价格");
+    expect(t.rows).toHaveLength(2);
+    expect(t.rows[0].name ?? t.rows[0]["名称"]).toBe("标题表鞋A");
   });
 });

@@ -115,11 +115,26 @@ function parseProduct(text: string, action: string): { name?: string; new_name?:
 }
 
 /** 解析批量商品数据：读上传文件（Excel）或解析粘贴文本（CSV）→ items */
+/** 单元格数值：空/非法 → undefined；0 是合法值（不能当缺值） */
+function cellNum(v: string | undefined): number | undefined {
+  if (v === undefined || String(v).trim() === "") return undefined;
+  const n = Number(v);
+  return Number.isNaN(n) ? undefined : n;
+}
+
+/** 表格"状态"列 → 业务状态（上架/在售 → on_sale；下架/停售 → off_sale） */
+function statusFromCell(v: string | undefined): string | undefined {
+  if (!v) return undefined;
+  if (/上架|在售|on\s*sale/i.test(v)) return "on_sale";
+  if (/下架|停售|off\s*sale/i.test(v)) return "off_sale";
+  return undefined;
+}
+
 async function parseBatchItems(
   newText: string,
   tableText: string,
   userId: string,
-): Promise<{ items: Array<{ name?: string; price?: number; stock?: number }>; error?: string }> {
+): Promise<{ items: Array<{ name?: string; price?: number; stock?: number; status?: string }>; error?: string }> {
   const { parseCsvText, parseExcelFile } = await import("../../tools/excel.js");
   try {
     let parsed: Awaited<ReturnType<typeof parseCsvText>>;
@@ -143,10 +158,12 @@ async function parseBatchItems(
       const nameKey = keys.find((k) => /名称|商品|name/i.test(k)) ?? keys[0];
       const priceKey = keys.find((k) => /价格|单价|price/i.test(k));
       const stockKey = keys.find((k) => /库存|数量|stock/i.test(k));
+      const statusKey = keys.find((k) => /状态|status/i.test(k));
       return {
         name: r[nameKey] || undefined,
-        price: priceKey ? Number(r[priceKey]) || undefined : undefined,
-        stock: stockKey ? Number(r[stockKey]) || undefined : undefined,
+        price: priceKey ? cellNum(r[priceKey]) : undefined,
+        stock: stockKey ? cellNum(r[stockKey]) : undefined,
+        status: statusKey ? statusFromCell(r[statusKey]) : undefined,
       };
     });
     return { items };
@@ -256,13 +273,21 @@ interface RowFilters {
   expected_count?: number;
 }
 
+/** 批量数据行（解析自表格：名称/价格/库存/状态列） */
+interface BatchItem {
+  name?: string;
+  price?: number;
+  stock?: number;
+  status?: string;
+}
+
 /** 行级条件过滤：描述条件（价格/库存上下限、排除名单）与表格行校验，不满足的行跳过 */
 function applyRowFilters(
-  items: Array<{ name?: string; price?: number; stock?: number }>,
+  items: BatchItem[],
   filters: RowFilters | undefined,
-): { kept: Array<{ name?: string; price?: number; stock?: number }>; skipped: Array<{ name: string; reason: string }> } {
+): { kept: BatchItem[]; skipped: Array<{ name: string; reason: string }> } {
   if (!filters) return { kept: items, skipped: [] };
-  const kept: Array<{ name?: string; price?: number; stock?: number }> = [];
+  const kept: BatchItem[] = [];
   const skipped: Array<{ name: string; reason: string }> = [];
   for (const item of items) {
     const reasons: string[] = [];
@@ -372,7 +397,7 @@ const skill: Skill = {
           const success: string[] = [];
           const existing = await callBizApi<Product[]>("/api/products", "GET", token);
           for (const item of kept) {
-            if (!item.name || !item.price) {
+            if (!item.name || item.price === undefined) {
               failed.push({ name: item.name ?? "(无名)", reason: "缺名称或价格" });
               continue;
             }
@@ -383,13 +408,18 @@ const skill: Skill = {
                 continue;
               }
               if (target) {
-                // 已存在：更新字段；仅用户明确"上架"时恢复 on_sale（表格驱动调整不动状态）
-                await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token,
-                  { ...(restoreOnSale ? { status: "on_sale" } : {}), ...(item.price ? { price: item.price } : {}), ...(item.stock !== undefined ? { stock: item.stock } : {}) });
+                // 已存在：更新表格列；状态列（行级，优先）或明确"上架"驱动状态变更
+                const patch: Record<string, unknown> = {};
+                if (item.price !== undefined) patch.price = item.price;
+                if (item.stock !== undefined) patch.stock = item.stock;
+                if (item.status === "on_sale") patch.status = "on_sale";
+                else if (item.status === "off_sale") patch.status = "off_sale";
+                else if (restoreOnSale) patch.status = "on_sale";
+                await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token, patch);
                 success.push(item.name);
               } else {
                 await callBizApi<Product>("/api/products", "POST", token,
-                  { shop_id: shopId, name: item.name, price: item.price, stock: item.stock ?? 0, status: "on_sale" });
+                  { shop_id: shopId, name: item.name, price: item.price, stock: item.stock ?? 0, status: item.status === "off_sale" ? "off_sale" : "on_sale" });
                 success.push(item.name);
               }
             } catch (e) {
@@ -475,8 +505,10 @@ const skill: Skill = {
           return { status: "success", output: `📦 商品列表：\n${lines.join("\n")}`, data: { count: products.length } };
         }
         case "update": {
-          // 批量更新（"用刚才的表格批量调整价格/库存"）→ 读上传文件逐条改
-          const isBatchUpdate = (intent.params?.action_detail as string | undefined)?.includes("批量")
+          // 批量更新（"用刚才的表格批量调整价格/库存"）→ 读上传文件逐条改；
+          // 有表格附件（state.table_text）即按批量处理（网关一次打包场景）
+          const isBatchUpdate = Boolean(state.table_text)
+            || (intent.params?.action_detail as string | undefined)?.includes("批量")
             || /批量|表格|文件|excel|xlsx|上传/i.test(newText);
           if (isBatchUpdate) {
             return await batchUpdateProducts(token, shopId, newText, intent, state);

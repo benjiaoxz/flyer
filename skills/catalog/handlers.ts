@@ -54,7 +54,7 @@ const manifest: SkillManifest = {
   id: "catalog",
   name: "商品管理",
   description: "商家上架/查询/修改/下架商品（对接业务系统）",
-  intents: ["catalog_add", "catalog_query", "catalog_update", "catalog_off"],
+  intents: ["new_request", "catalog_add", "catalog_query", "catalog_update", "catalog_off"],
   trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格"],
   session_mode: "single",
   max_turns_per_session: 2,
@@ -90,7 +90,15 @@ const skill: Skill = {
     }
 
     try {
-      const action = intent.intent.replace("catalog_", ""); // add/query/update/off
+      // 动作解析：显式意图优先；new_request（规则兜底）按文本猜测
+      let action = intent.intent.replace("catalog_", "");
+      if (action === "new_request") {
+        if (newText.includes("上架")) action = "add";
+        else if (newText.includes("下架")) action = "off";
+        else if (newText.includes("改") || newText.includes("价格")) action = "update";
+        else if (newText.includes("查") || newText.includes("看")) action = "query";
+        else action = "add";
+      }
       const product = parseProduct(newText);
 
       switch (action) {

@@ -2,6 +2,7 @@
  * 
  */
 import Fastify from "fastify";
+import cors from "@fastify/cors";
 import { z } from "zod";
 
 import { Agent } from "../core/agent.js";
@@ -24,6 +25,7 @@ const ResumeReq = z.object({
 
 export function buildApi(agent: Agent) {
   const app = Fastify({ logger: false });
+  void app.register(cors, { origin: true });  // 开发期全放行；生产按域名限制
 
   app.get("/health", async () => ({ status: "ok" }));
 

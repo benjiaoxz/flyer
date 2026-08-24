@@ -112,7 +112,7 @@ export class Agent {
     this.recordTaskStep(task, `execute:${manifest.id}`, "running");
     let updates: { status: string; output: string; reason: string; data: Record<string, unknown> };
     try {
-      const raw = skill.handle(s, { intent: s.intent, params: s.intent_params }, s.user_text);
+      const raw = await skill.handle(s, { intent: s.intent, params: s.intent_params }, s.user_text);
       updates = this.normalizeResult(raw);
     } catch (e) {
       logger.error(`[技能异常] ${manifest.id} handle 抛异常: ${String(e)}`);
@@ -175,7 +175,7 @@ export class Agent {
     if (parsed.success) {
       return parsed.data;
     }
-    logger.warn(`[契约违规] 技能返回不合规: ${JSON.stringify(raw)}`);
+    logger.warn(`[契约违规] 技能返回不合规: ${JSON.stringify(raw)} type=${typeof raw}`);
     this.recordOutcome("error", "contract", `SkillResult 校验失败: ${parsed.error.message}`, JSON.stringify(raw).slice(0, 200));
     return {
       status: "error",

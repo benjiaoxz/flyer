@@ -5,7 +5,7 @@ enabled: true
 manifest:
   name: 商品管理
   description: 商家上架/查询/修改/下架商品（对接业务系统）
-  intents: [catalog_add, catalog_query, catalog_update, catalog_off]
+  intents: [new_request, catalog_add, catalog_query, catalog_update, catalog_off]
   trigger_keywords: [上架, 商品, 下架, 改价, 库存, 价格]
   session_mode: single
   max_turns_per_session: 2

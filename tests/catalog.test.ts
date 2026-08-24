@@ -106,3 +106,24 @@ describe("catalog 技能", () => {
     expect(r.reason).toContain("库存不足");
   });
 });
+
+describe("catalog new_request 动作猜测（无 LLM 兜底）", () => {
+  it("上架文本（含库存）→ 猜 add 而非 update", async () => {
+    const r = await run('上架"自动鞋" 299元 库存10', "new_request");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("已上架");
+    expect(r.output).toContain("自动鞋");
+  });
+
+  it("改价文本 → 猜 update", async () => {
+    const r = await run('改"Nike 鞋"价格 259元', "new_request");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("259元");
+  });
+
+  it("下架文本 → 猜 off", async () => {
+    const r = await run('下架"Nike 鞋"', "new_request");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("已下架");
+  });
+});

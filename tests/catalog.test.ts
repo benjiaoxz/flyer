@@ -283,3 +283,33 @@ describe("catalog 批量上架（add_batch）", () => {
     expect(r.output).toContain("缺价鞋");
   });
 });
+
+describe("catalog 上传文件批量上架", () => {
+  it("读上传的 Excel → 批量上架", async () => {
+    // mock api/server 的 getLatestUpload/readUploadFile
+    vi.mock("../src/api/server.js", async (importOriginal) => {
+      const mod = await importOriginal<typeof import("../src/api/server.js")>();
+      return {
+        ...mod,
+        getLatestUpload: () => "test-file",
+        readUploadFile: () => {
+          const XLSX = require("xlsx") as typeof import("xlsx");
+          const ws = XLSX.utils.aoa_to_sheet([["名称", "价格", "库存"], ["上传鞋A", 300, 30]]);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+          return XLSX.write(wb, { type: "buffer" }) as Buffer;
+        },
+      };
+    });
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const before = products.length;
+    const r = await skill.handle(
+      { user_text: "用刚才上传的表格批量上架", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_add_batch", params: {} } as never,
+      "用刚才上传的表格批量上架",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 1 条");
+    expect(products.some((p) => p.name === "上传鞋A")).toBe(true);
+  });
+});

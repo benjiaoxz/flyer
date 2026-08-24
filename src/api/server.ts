@@ -3,6 +3,7 @@
  */
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import { z } from "zod";
 
 import { Agent } from "../core/agent.js";
@@ -26,6 +27,8 @@ const ResumeReq = z.object({
 export function buildApi(agent: Agent) {
   const app = Fastify({ logger: false });
   void app.register(cors, { origin: true });  // 开发期全放行；生产按域名限制
+  void app.register(multipart);  // 文件上传
+  ensureUploadDir();
 
   app.get("/health", async () => ({ status: "ok" }));
 
@@ -83,6 +86,8 @@ export function buildApi(agent: Agent) {
     });
   });
 
+  registerUpload(app, authorize);  // 文件上传（mall-web 批量上架）
+
   app.get("/api/usage", async (req) => {
     await authorize(req);
     const skillId = (req.query as { skill_id?: string }).skill_id;
@@ -130,5 +135,51 @@ if (process.argv[1] && process.argv[1].endsWith("server.ts")) {
   main().catch((e) => {
     logger.error(`网关启动失败: ${String(e)}`);
     process.exit(1);
+  });
+}
+
+// ---------------------------------------------------------------- 文件上传
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+
+const UPLOAD_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "data", "uploads");
+
+function ensureUploadDir(): void {
+  mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+/** 用户最近上传的文件（user_id → file_id），供技能按用户取 */
+const userUploads = new Map<string, string>();
+
+export function getLatestUpload(userId: string): string | null {
+  const fileId = userUploads.get(userId);
+  return fileId ?? null;
+}
+
+export function readUploadFile(fileId: string): Buffer | null {
+  const path = join(UPLOAD_DIR, fileId);
+  if (!existsSync(path)) return null;
+  return readFileSync(path);
+}
+
+function registerUpload(app: any, authorize: (req: any) => Promise<string | UserContext>) {
+  app.post("/api/upload", async (req: any, reply: any) => {
+    // JWT 鉴权（复用 authorize 的 UserContext 取 user_id）
+    const caller = await authorize(req);
+    const userId = typeof caller === "string" ? caller : caller.user_id;
+    if (!userId || userId === "anonymous") {
+      return reply.status(401).send({ detail: "需要登录" });
+    }
+    const file = await req.file();
+    if (!file) return reply.status(400).send({ detail: "缺少文件" });
+    const fileId = `${Date.now()}-${randomUUID().slice(0, 8)}${file.filename}`;
+    const buf = await file.toBuffer();
+    writeFileSync(join(UPLOAD_DIR, fileId), buf);
+    userUploads.set(userId, fileId);
+    logger.info(`文件上传: ${file.filename} (${buf.length} bytes, user=${userId})`);
+    return reply.send({ file_id: fileId, filename: file.filename, size: buf.length });
   });
 }

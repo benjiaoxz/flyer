@@ -156,13 +156,26 @@ const skill: Skill = {
           const tableText = (extra.table as string | undefined)
             ?? (intent.params?.action_detail as string | undefined)
             ?? newText;
-          const { parseCsvText } = await import("../../tools/excel.js");
+          const { parseCsvText, parseExcelFile } = await import("../../tools/excel.js");
           let items: Array<{ name?: string; price?: number; stock?: number }>;
           try {
-            // LLM 抽取的表格可能被重新格式化，解析为空时回退用原始输入
-            let parsed = parseCsvText(tableText);
-            if (!parsed.rows.length && tableText !== newText) {
-              parsed = parseCsvText(newText);
+            let parsed: Awaited<ReturnType<typeof parseCsvText>>;
+            // ① 用户上传过文件（"用刚才的表格"）→ 读文件解析
+            if (/表格|文件|excel|xlsx|上传/i.test(newText) && !tableText.includes(",")) {
+              const { getLatestUpload, readUploadFile } = await import("../../api/server.js");
+              const fileId = getLatestUpload(String(state.user_ctx?.user_id ?? ""));
+              const buf = fileId ? readUploadFile(fileId) : null;
+              if (buf) {
+                parsed = parseExcelFile(buf);
+              } else {
+                return { status: "error", output: "未找到上传的文件（请先在页面上传 Excel）", reason: "无文件", data: {} };
+              }
+            } else {
+              // ② 对话粘贴 CSV/表格
+              parsed = parseCsvText(tableText);
+              if (!parsed.rows.length && tableText !== newText) {
+                parsed = parseCsvText(newText);
+              }
             }
             if (!parsed.rows.length) {
               return { status: "error", output: "未解析到商品数据（需要表格：名称,价格,库存 每行一个）", reason: "空表格", data: {} };

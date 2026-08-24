@@ -57,9 +57,9 @@ const manifest: SkillManifest = {
   intents: ["new_request", "catalog_add", "catalog_add_batch", "catalog_query", "catalog_update", "catalog_off"],
   intent_descriptions: {
     catalog_add: "上架商品（用户说上架X时用；含创建或恢复）",
-    catalog_add_batch: "批量上架商品（用户提供 Excel 文件或 CSV/表格文本，含多行商品数据）",
+    catalog_add_batch: "批量上架商品（用户提供 Excel 文件或 CSV/表格文本，含多行商品数据，用于新增/上架商品）",
     catalog_query: "查询/查看商品信息（用户说'给我X信息''查X''看X''X的价格库存状态'时用——只读不改）",
-    catalog_update: "修改/调整商品价格或库存（用户明确说改/调/修改时才用；仅查信息不是修改）",
+    catalog_update: "修改/调整商品价格或库存（用户明确说改/调/修改时才用；含批量场景：'批量调整价格''批量改库存''用刚才的表格批量调整'；仅查信息不是修改）",
     catalog_off: "下架商品（用户说下架/删除X时用）",
   },
   cacheable_intents: ["catalog_query"],  // 写操作（上架/改/下架）不缓存
@@ -114,6 +114,115 @@ function parseProduct(text: string, action: string): { name?: string; new_name?:
   return out;
 }
 
+/** 解析批量商品数据：读上传文件（Excel）或解析粘贴文本（CSV）→ items */
+async function parseBatchItems(
+  newText: string,
+  tableText: string,
+  userId: string,
+): Promise<{ items: Array<{ name?: string; price?: number; stock?: number }>; error?: string }> {
+  const { parseCsvText, parseExcelFile } = await import("../../tools/excel.js");
+  try {
+    let parsed: Awaited<ReturnType<typeof parseCsvText>>;
+    if (/表格|文件|excel|xlsx|上传/i.test(newText) && !tableText.includes(",")) {
+      // 读上传文件
+      const { getLatestUpload, readUploadFile } = await import("../../api/server.js");
+      const fileId = getLatestUpload(userId);
+      const buf = fileId ? readUploadFile(fileId) : null;
+      if (!buf) return { items: [], error: "未找到上传的文件（请先在页面上传 Excel）" };
+      parsed = parseExcelFile(buf);
+    } else {
+      // 解析粘贴文本
+      parsed = parseCsvText(tableText);
+      if (!parsed.rows.length && tableText !== newText) {
+        parsed = parseCsvText(newText);
+      }
+    }
+    if (!parsed.rows.length) return { items: [], error: "未解析到商品数据（需要表格：名称,价格,库存 每行一个）" };
+    const items = parsed.rows.map((r) => {
+      const keys = Object.keys(r);
+      const nameKey = keys.find((k) => /名称|商品|name/i.test(k)) ?? keys[0];
+      const priceKey = keys.find((k) => /价格|单价|price/i.test(k));
+      const stockKey = keys.find((k) => /库存|数量|stock/i.test(k));
+      return {
+        name: r[nameKey] || undefined,
+        price: priceKey ? Number(r[priceKey]) || undefined : undefined,
+        stock: stockKey ? Number(r[stockKey]) || undefined : undefined,
+      };
+    });
+    return { items };
+  } catch (e) {
+    return { items: [], error: `批量数据解析失败：${(e as Error).message}` };
+  }
+}
+
+/** 批量更新商品（"用刚才的表格批量调整价格/库存/改名"）：
+ * 读上传文件或粘贴 CSV，逐行按名称定位商品，只更新表格中出现的列（价格/库存） */
+async function batchUpdateProducts(
+  token: string,
+  shopId: number,
+  newText: string,
+  intent: IntentResult,
+  userId: string,
+): Promise<SkillResult> {
+  const extra = (intent.params?.extra ?? {}) as Record<string, unknown>;
+  const tableText = (extra.table as string | undefined)
+    ?? (intent.params?.action_detail as string | undefined)
+    ?? newText;
+  const { items, error } = await parseBatchItems(newText, tableText, userId);
+  if (error) {
+    return { status: "error", output: error, reason: "解析失败", data: {} };
+  }
+  // 列护栏：用户明确说改库存/改价格，但表格列对不上 → 报错而非改错列
+  const detail = `${(intent.params?.action_detail as string | undefined) ?? ""} ${newText}`;
+  const wantsStock = /库存|数量/.test(detail);
+  const wantsPrice = /价格|单价|售价|定价/.test(detail);
+  const hasPriceCol = items.some((i) => i.price !== undefined);
+  const hasStockCol = items.some((i) => i.stock !== undefined);
+  if (wantsStock && !hasStockCol && hasPriceCol) {
+    return { status: "error", output: "表格中没有库存列（只有价格列）——请确认要改的是价格还是库存", reason: "列不匹配", data: {} };
+  }
+  if (wantsPrice && !hasPriceCol && hasStockCol) {
+    return { status: "error", output: "表格中没有价格列（只有库存列）——请确认要改的是价格还是库存", reason: "列不匹配", data: {} };
+  }
+  const products = await callBizApi<Product[]>("/api/products", "GET", token);
+  const success: string[] = [];
+  const failed: Array<{ name: string; reason: string }> = [];
+  for (const item of items) {
+    if (!item.name) {
+      failed.push({ name: "(无名)", reason: "缺名称" });
+      continue;
+    }
+    // 只更新表格中实际出现的列（价格/库存）；无更新目标的行跳过
+    const patch: Record<string, unknown> = {};
+    if (item.price !== undefined) patch.price = item.price;
+    if (item.stock !== undefined) patch.stock = item.stock;
+    if (!Object.keys(patch).length) {
+      failed.push({ name: item.name, reason: "该行没有价格/库存更新列" });
+      continue;
+    }
+    // 按名称定位商品：精确匹配优先，退而求其次 includes（避免"调试鞋"误匹配"调试鞋2"）
+    const target = products.find((p) => p.name === item.name)
+      ?? products.find((p) => item.name && p.name.includes(item.name));
+    if (!target) {
+      failed.push({ name: item.name, reason: "未找到该商品" });
+      continue;
+    }
+    try {
+      await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token,
+        { ...patch, status: "on_sale" });
+      success.push(item.name);
+    } catch (e) {
+      failed.push({ name: item.name, reason: (e as Error).message });
+    }
+  }
+  return {
+    status: failed.length ? "error" : "success",
+    output: `✏️ 批量更新完成：成功 ${success.length} 条${failed.length ? `，失败 ${failed.length} 条（${failed.map((f) => `${f.name}:${f.reason}`).join("；")}）` : ""}`,
+    reason: failed.length ? `部分失败: ${failed.map((f) => f.name).join("、")}` : "",
+    data: { success_count: success.length, failed_count: failed.length },
+  };
+}
+
 const skill: Skill = {
   manifest,
   async handle(state: GenericState, intent: IntentResult, newText: string): Promise<SkillResult> {
@@ -139,6 +248,13 @@ const skill: Skill = {
         else if (newText.includes("查") || newText.includes("看")) action = "query";
         else action = "add";
       }
+      // 意图护栏：LLM 偶尔把"表格批量调整价格/库存"误判为 add_batch；
+      // 文本同时含改价动词+价格/库存字段时，确定性改回 update（批量上架不受影响）
+      if (action === "add_batch"
+        && /调整|修改|调价|降价|涨价|改成|改为|调成|变|改/.test(newText)
+        && /价格|单价|售价|库存|数量|定价/.test(newText)) {
+        action = "update";
+      }
       // 字段来源：LLM params 优先（语义抽取），正则 parseProduct 兜底（无 LLM/漏抽时）
       const regex = parseProduct(newText, action);
       const p = intent.params ?? {};
@@ -156,43 +272,13 @@ const skill: Skill = {
           const tableText = (extra.table as string | undefined)
             ?? (intent.params?.action_detail as string | undefined)
             ?? newText;
-          const { parseCsvText, parseExcelFile } = await import("../../tools/excel.js");
-          let items: Array<{ name?: string; price?: number; stock?: number }>;
-          try {
-            let parsed: Awaited<ReturnType<typeof parseCsvText>>;
-            // ① 用户上传过文件（"用刚才的表格"）→ 读文件解析
-            if (/表格|文件|excel|xlsx|上传/i.test(newText) && !tableText.includes(",")) {
-              const { getLatestUpload, readUploadFile } = await import("../../api/server.js");
-              const fileId = getLatestUpload(String(state.user_ctx?.user_id ?? ""));
-              const buf = fileId ? readUploadFile(fileId) : null;
-              if (buf) {
-                parsed = parseExcelFile(buf);
-              } else {
-                return { status: "error", output: "未找到上传的文件（请先在页面上传 Excel）", reason: "无文件", data: {} };
-              }
-            } else {
-              // ② 对话粘贴 CSV/表格
-              parsed = parseCsvText(tableText);
-              if (!parsed.rows.length && tableText !== newText) {
-                parsed = parseCsvText(newText);
-              }
-            }
-            if (!parsed.rows.length) {
-              return { status: "error", output: "未解析到商品数据（需要表格：名称,价格,库存 每行一个）", reason: "空表格", data: {} };
-            }
-            items = parsed.rows.map((r) => {
-              const keys = Object.keys(r);
-              const nameKey = keys.find((k) => /名称|商品|name/i.test(k)) ?? keys[0];
-              const priceKey = keys.find((k) => /价格|单价|price/i.test(k));
-              const stockKey = keys.find((k) => /库存|数量|stock/i.test(k));
-              return {
-                name: r[nameKey] || undefined,
-                price: priceKey ? Number(r[priceKey]) || undefined : undefined,
-                stock: stockKey ? Number(r[stockKey]) || undefined : undefined,
-              };
-            });
-          } catch (e) {
-            return { status: "error", output: `批量数据解析失败：${(e as Error).message}`, reason: "解析失败", data: {} };
+          const { items, error } = await parseBatchItems(
+            newText,
+            tableText,
+            String(state.user_ctx?.user_id ?? ""),
+          );
+          if (error) {
+            return { status: "error", output: error, reason: "解析失败", data: {} };
           }
           // 逐条上架（复用 add 逻辑，同名恢复/创建）
           const success: string[] = [];
@@ -294,6 +380,12 @@ const skill: Skill = {
           return { status: "success", output: `📦 商品列表：\n${lines.join("\n")}`, data: { count: products.length } };
         }
         case "update": {
+          // 批量更新（"用刚才的表格批量调整价格/库存"）→ 读上传文件逐条改
+          const isBatchUpdate = (intent.params?.action_detail as string | undefined)?.includes("批量")
+            || /批量|表格|文件|excel|xlsx|上传/i.test(newText);
+          if (isBatchUpdate) {
+            return await batchUpdateProducts(token, shopId, newText, intent, String(state.user_ctx?.user_id ?? ""));
+          }
           // 支持改名/改价/改库存任意组合；至少有一个更新目标才执行
           const hasUpdate = product.new_name !== undefined || product.price !== undefined || product.stock !== undefined;
           if (!product.name || !hasUpdate) {

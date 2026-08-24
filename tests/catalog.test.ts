@@ -284,6 +284,69 @@ describe("catalog 批量上架（add_batch）", () => {
   });
 });
 
+describe("catalog 批量更新（表格批量改价/库存）", () => {
+  it("CSV 批量改价 → 只 PATCH 已有商品，不新建", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\nNike 鞋,259\n调试鞋,199";
+    const before = products.length;
+    const r = await skill.handle(
+      { user_text: "用刚才的表格批量调整价格", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_update", params: { extra: { table: csv } } } as never,
+      "用刚才的表格批量调整价格",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 2 条");
+    expect(products.length).toBe(before); // 不新建商品
+    expect(products.find((p) => p.name === "Nike 鞋")?.price).toBe(259);
+    expect(products.find((p) => p.name === "调试鞋")?.price).toBe(199);
+    // 全走 PATCH，无 POST
+    expect(fetchMock.mock.calls.some((c) => c[1]?.method === "POST")).toBe(false);
+  });
+
+  it("批量改库存 + 找不到的商品记失败", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,库存\nNike 鞋,80\n不存在鞋,99";
+    const r = await skill.handle(
+      { user_text: "用刚才的表格批量改库存", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_update", params: { extra: { table: csv } } } as never,
+      "用刚才的表格批量改库存",
+    );
+    expect(r.output).toContain("成功 1 条");
+    expect(r.output).toContain("失败 1 条");
+    expect(r.output).toContain("不存在鞋");
+    expect(products.find((p) => p.name === "Nike 鞋")?.stock).toBe(80);
+  });
+
+  it("意图护栏：LLM 误判 add_batch 但文本是批量改价 → 确定性改走 update", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\n调试鞋,168";
+    const before = products.length;
+    const r = await skill.handle(
+      { user_text: "用刚才的表格批量调整价格", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_add_batch", params: { extra: { table: csv } } } as never, // 故意传 add_batch
+      "用刚才的表格批量调整价格",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("批量更新完成");
+    expect(products.length).toBe(before); // update 不新建
+    expect(products.find((p) => p.name === "调试鞋")?.price).toBe(168);
+  });
+
+  it("列护栏：说批量改库存但表格只有价格列 → 报错不改价", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\n调试鞋,168";
+    const before = products.find((p) => p.name === "调试鞋")?.price;
+    const r = await skill.handle(
+      { user_text: "用刚才的表格批量改库存", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_update", params: { extra: { table: csv } } } as never,
+      "用刚才的表格批量改库存",
+    );
+    expect(r.status).toBe("error");
+    expect(r.output).toContain("没有库存列");
+    expect(products.find((p) => p.name === "调试鞋")?.price).toBe(before); // 价格未被误改
+  });
+});
+
 describe("catalog 上传文件批量上架", () => {
   it("读上传的 Excel → 批量上架", async () => {
     // mock api/server 的 getLatestUpload/readUploadFile

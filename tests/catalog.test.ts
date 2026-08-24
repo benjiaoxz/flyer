@@ -506,6 +506,49 @@ describe("catalog 表格附件（table_text 一次打包）", () => {
     expect(r.output).toContain("成功 1 条");
     expect(products.find((p) => p.name === "零价鞋")?.price).toBe(0);
   });
+
+  it("描述指名商品 → 只处理表格中匹配的行，其余跳过", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\nNike 鞋,259\n调试鞋,199";
+    const r = await skill.handle(
+      { user_text: "根据表格调整\"Nike 鞋\"的信息", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_update", params: { name: "Nike 鞋" } } as never,
+      "根据表格调整\"Nike 鞋\"的信息",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 1 条");
+    expect(r.output).toContain("跳过 1 条");
+    expect(r.output).toContain("描述指定了「Nike 鞋」，跳过");
+    expect(products.find((p) => p.name === "Nike 鞋")?.price).toBe(259); // 目标行被改
+    expect(products.find((p) => p.name === "调试鞋")?.price).toBe(599); // 其他行不动
+  });
+
+  it("描述指名商品但表格里没有该行 → 明确报错", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\nNike 鞋,259";
+    const r = await skill.handle(
+      { user_text: "根据表格调整\"不存在的鞋\"的信息", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_update", params: { name: "不存在的鞋" } } as never,
+      "根据表格调整\"不存在的鞋\"的信息",
+    );
+    expect(r.status).toBe("error");
+    expect(r.output).toContain("表格里没有「不存在的鞋」这一行");
+  });
+
+  it("new_request 兜底 + 表格 + 引号点名 → 限定该行批量更新（LLM 漏抽 name 也不整表）", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\nNike 鞋,259\n调试鞋,199";
+    const r = await skill.handle(
+      { user_text: "根据表格调整\"Nike 鞋\"的信息", table_text: csv, user_ctx: ctx } as never,
+      { intent: "new_request", params: {} } as never, // LLM 识别成 new_request（不稳定场景）
+      "根据表格调整\"Nike 鞋\"的信息",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 1 条");
+    expect(r.output).toContain("跳过 1 条");
+    expect(products.find((p) => p.name === "Nike 鞋")?.price).toBe(259); // 目标行被改
+    expect(products.find((p) => p.name === "调试鞋")?.price).toBe(599); // 其他行不动
+  });
 });
 
 describe("catalog 上传文件批量上架", () => {

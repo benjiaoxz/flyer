@@ -172,6 +172,20 @@ async function parseBatchItems(
   }
 }
 
+/** 描述指名商品 → 只处理表格中名称匹配的行（其余跳过）：
+ * "根据表格调整'表格商品4'的信息" → 只处理表格商品4 那一行，不整表处理 */
+function applyNameScope(
+  items: BatchItem[],
+  paramsName: string | undefined,
+): { kept: BatchItem[]; skipped: Array<{ name: string; reason: string }> } {
+  if (!paramsName) return { kept: items, skipped: [] };
+  const kept = items.filter((i) => i.name === paramsName);
+  const skipped = items
+    .filter((i) => i.name !== paramsName)
+    .map((i) => ({ name: i.name ?? "(无名)", reason: `描述指定了「${paramsName}」，跳过` }));
+  return { kept, skipped };
+}
+
 /** 批量更新商品（"用刚才的表格批量调整价格/库存/改名"）：
  * 读上传文件或粘贴 CSV，逐行按名称定位商品，只更新表格中出现的列（价格/库存），
  * 不强制改状态（表格驱动调整语义，避免把下架商品意外上架） */
@@ -207,14 +221,20 @@ async function batchUpdateProducts(
   if (wantsPrice && !hasPriceCol) {
     return { status: "error", output: "表格中没有价格列——请确认表格列（名称/价格/库存）与要改的字段一致", reason: "列不匹配", data: {} };
   }
+  // 描述指名商品 → 只处理表格中匹配的行（"根据表格调整'表格商品4'的信息"只动这一行）
+  const scoped = applyNameScope(items, intent.params?.name as string | undefined);
+  if (scoped.kept.length === 0) {
+    return { status: "error", output: `表格里没有「${intent.params?.name}」这一行——请确认商品名与表格一致`, reason: "无目标行", data: {} };
+  }
+  const failed: Array<{ name: string; reason: string }> = scoped.skipped.map((s) => ({ name: s.name, reason: `跳过: ${s.reason}` }));
   // 描述条件与表格一致性：预期数量校验 + 行级过滤（价格/库存/排除），不满足的行跳过
   const filters = (intent.params?.filters as RowFilters | undefined) ?? undefined;
-  const countErr = checkExpectedCount(filters?.expected_count, items);
+  const countErr = checkExpectedCount(filters?.expected_count, scoped.kept);
   if (countErr) {
     return { status: "error", output: countErr, reason: "数量不一致", data: {} };
   }
-  const { kept, skipped } = applyRowFilters(items, filters);
-  const failed: Array<{ name: string; reason: string }> = skipped.map((s) => ({ name: s.name, reason: `跳过: ${s.reason}` }));
+  const { kept, skipped } = applyRowFilters(scoped.kept, filters);
+  failed.push(...skipped.map((s) => ({ name: s.name, reason: `跳过: ${s.reason}` })));
   if (!kept.length) {
     return { status: "error", output: `没有符合条件的商品行（${skipped.length} 行被条件过滤）`, reason: "无符合行", data: { skipped_count: skipped.length } };
   }
@@ -341,9 +361,9 @@ const skill: Skill = {
       // 动作解析：显式意图优先；new_request（规则兜底）按文本猜测
       let action = intent.intent.replace("catalog_", "");
       if (action === "new_request") {
-        if (newText.includes("上架")) action = "add";
-        else if (newText.includes("下架")) action = "off";
-        else if (newText.includes("改") || newText.includes("价格")) action = "update";
+        if (newText.includes("下架")) action = "off";
+        else if (state.table_text) action = newText.includes("上架") ? "add" : "update"; // 有表格：表格驱动
+        else if (newText.includes("改") || newText.includes("价格") || newText.includes("调整")) action = "update";
         else if (newText.includes("查") || newText.includes("看")) action = "query";
         else action = "add";
       }
@@ -363,6 +383,12 @@ const skill: Skill = {
         price: (p.price as number | undefined) ?? regex.price,
         stock: (p.stock as number | undefined) ?? regex.stock,
       };
+      // 文本引号点名（"根据表格调整'表格商品4'的信息"）→ 限定表格行范围，
+      // 防止把整张表都处理（LLM 漏抽 name 时确定性兜底）
+      if (!p.name && action !== "query") {
+        const quotedName = newText.match(/["'「」《](.+?)["'」》]/)?.[1]?.trim();
+        if (quotedName) p.name = quotedName;
+      }
 
       switch (action) {
         case "add_batch": {
@@ -382,14 +408,22 @@ const skill: Skill = {
           }
           // 是否明确"上架"意图（决定已存在商品是否恢复上架；表格驱动调整时不强制改状态）
           const restoreOnSale = /上架|恢复|重新上架/.test(newText);
+          // 描述指名商品 → 只处理表格中匹配的行
+          const scoped = applyNameScope(items, intent.params?.name as string | undefined);
+          if (scoped.kept.length === 0) {
+            return { status: "error", output: `表格里没有「${intent.params?.name}」这一行——请确认商品名与表格一致`, reason: "无目标行", data: {} };
+          }
           // 描述条件与表格一致性：预期数量校验 + 行级过滤（价格/库存/排除），不满足的行跳过
           const filters = (intent.params?.filters as RowFilters | undefined) ?? undefined;
-          const countErr = checkExpectedCount(filters?.expected_count, items);
+          const countErr = checkExpectedCount(filters?.expected_count, scoped.kept);
           if (countErr) {
             return { status: "error", output: countErr, reason: "数量不一致", data: {} };
           }
-          const { kept, skipped } = applyRowFilters(items, filters);
-          const failed: Array<{ name: string; reason: string }> = skipped.map((s) => ({ name: s.name, reason: `跳过: ${s.reason}` }));
+          const { kept, skipped } = applyRowFilters(scoped.kept, filters);
+          const failed: Array<{ name: string; reason: string }> = [
+            ...scoped.skipped.map((s) => ({ name: s.name, reason: `跳过: ${s.reason}` })),
+            ...skipped.map((s) => ({ name: s.name, reason: `跳过: ${s.reason}` })),
+          ];
           if (!kept.length) {
             return { status: "error", output: `没有符合条件的商品行（${skipped.length} 行被条件过滤）`, reason: "无符合行", data: { skipped_count: skipped.length } };
           }

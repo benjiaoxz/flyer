@@ -185,3 +185,21 @@ describe("catalog 上架语义（同名恢复 vs 新建）", () => {
     expect(products.length).toBe(before + 1);
   });
 });
+
+describe("catalog 部分更新（只改价格/只改库存）", () => {
+  it("只改价格 → 库存不变", async () => {
+    products[1] = { ...products[1], price: 599, stock: 5 };
+    const r = await run('把调试鞋价格改为168元', "catalog_update");
+    expect(r.status).toBe("success");
+    expect(products[1].price).toBe(168);
+    expect(products[1].stock).toBe(5);  // 库存未被改动
+  });
+
+  it("只改库存 → 价格不变（防库存数字误当价格）", async () => {
+    products[1] = { ...products[1], price: 168, stock: 5 };
+    const r = await run('把调试鞋库存改成77', "catalog_update");
+    expect(r.status).toBe("success");
+    expect(products[1].stock).toBe(77);
+    expect(products[1].price).toBe(168);  // 价格未被误改
+  });
+});

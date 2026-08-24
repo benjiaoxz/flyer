@@ -94,15 +94,14 @@ function parseProduct(text: string, action: string): { name?: string; price?: nu
     out.name = (firstWord?.[0] ?? "").trim() || undefined;
   }
   if (action === "update" || action === "add") {
-    // 价格：必须含"价格/改为/元"等确认词（防"调试鞋2"的 2 误当价格）
-    const priceMatch = text.match(/(?:价格|单价|售价|定价|改为|改成|调成|设为|为)(\d+(?:\.\d+)?)\s*(?:元|块)?/);
-    if (priceMatch) {
-      out.price = Number(priceMatch[1]);
-    } else {
-      const yuanMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:元|块)/);
-      if (yuanMatch) out.price = Number(yuanMatch[1]);
-    }
-    const stockMatch = text.match(/(?:库存|数量)(?:\s*|改成|改为|调成|设为|变成|为)\s*(\d+)/);
+    // 价格：仅价格专属词确认（价格/单价/售价/定价/元/块），
+    // 不用通用"改为/为"——否则"库存改成77"的 77 会被误当价格
+    const priceMatch = text.match(
+      /(?:价格|单价|售价|定价)(?:改为|改成|调成|设为|调整为|为|到)?\s*(\d+(?:\.\d+)?)\s*(?:元|块)?/,
+    ) ?? text.match(/(\d+(?:\.\d+)?)\s*(?:元|块)/);
+    if (priceMatch) out.price = Number(priceMatch[1]);
+    // 库存：仅"库存/数量"词确认
+    const stockMatch = text.match(/(?:库存|数量)(?:\s*|改成|改为|调成|设为|变成|调整为|为|到)\s*(\d+)/);
     if (stockMatch) out.stock = Number(stockMatch[1]);
   }
   return out;
@@ -201,15 +200,21 @@ const skill: Skill = {
             };
           }
           const products = await callBizApi<Product[]>("/api/products", "GET", token);
-          const target = products.find((p) => p.name.includes(product.name!));
+          // 名称精确匹配优先，退而求其次 includes（避免"调试鞋"误匹配"调试鞋2"）
+          const target = products.find((p) => p.name === product.name)
+            ?? products.find((p) => p.name.includes(product.name!));
           if (!target) {
             return { status: "error", output: `未找到商品「${product.name}」`, reason: "商品不存在", data: {} };
           }
+          // 部分更新：只传用户指定的字段（可只改价格/只改库存/两者都改）
+          const patch: Record<string, unknown> = { status: "on_sale" };
+          if (product.price !== undefined) patch.price = product.price;
+          if (product.stock !== undefined) patch.stock = product.stock;
           const updated = await callBizApi<Product>(
             `/api/products/${target.id}`,
             "PATCH",
             token,
-            { price: product.price, stock: product.stock },
+            patch,
           );
           return {
             status: "success",

@@ -61,6 +61,7 @@ const manifest: SkillManifest = {
     catalog_update: "修改商品价格或库存（需指定商品名）",
     catalog_off: "下架商品（需指定商品名）",
   },
+  cacheable_intents: ["catalog_query"],  // 写操作（上架/改/下架）不缓存
   trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格"],
   session_mode: "single",
   max_turns_per_session: 1,
@@ -136,11 +137,35 @@ const skill: Skill = {
 
       switch (action) {
         case "add": {
-          if (!product.name || !product.price) {
+          if (!product.name) {
             return {
               status: "error",
-              output: "上架需要商品名和价格（如：上架\"Nike 鞋\" 299元 库存50）",
-              reason: "缺少商品名或价格",
+              output: "上架需要商品名（如：上架\"Nike 鞋\" 299元 库存50）",
+              reason: "缺少商品名",
+              data: {},
+            };
+          }
+          // 上架语义：同名商品已存在（如之前下架的）→ 恢复上架状态；不存在 → 创建新商品
+          const existing = await callBizApi<Product[]>("/api/products", "GET", token);
+          const target = existing.find((p) => p.name === product.name);
+          if (target) {
+            const restored = await callBizApi<Product>(
+              `/api/products/${target.id}`,
+              "PATCH",
+              token,
+              { status: "on_sale", ...(product.price ? { price: product.price } : {}), ...(product.stock !== undefined ? { stock: product.stock } : {}) },
+            );
+            return {
+              status: "success",
+              output: `✅ 已上架商品：${restored.name}（${restored.price}元，库存${restored.stock}，id=${restored.id}）`,
+              data: { product_id: restored.id },
+            };
+          }
+          if (!product.price) {
+            return {
+              status: "error",
+              output: "新商品上架需要价格（如：上架\"Nike 鞋\" 299元 库存50）",
+              reason: "缺少商品价格",
               data: {},
             };
           }

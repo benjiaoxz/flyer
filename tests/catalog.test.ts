@@ -67,7 +67,7 @@ describe("catalog 技能", () => {
   it("上架缺价格 → error + reason", async () => {
     const r = await run('上架"Nike Air"', "catalog_add");
     expect(r.status).toBe("error");
-    expect(r.output).toContain("需要商品名和价格");
+    expect(r.output).toContain("需要价格");
     expect(r.reason).toContain("缺少");
   });
 
@@ -163,5 +163,25 @@ describe("catalog 下架名称解析（操作词剔除）", () => {
     expect(r.status).toBe("success");
     expect(r.output).toContain("「调试鞋」");
     expect(r.output).not.toContain("状态");
+  });
+});
+
+describe("catalog 上架语义（同名恢复 vs 新建）", () => {
+  it("同名商品已存在（off_sale）→ 恢复上架，不新建", async () => {
+    // mock 里调试鞋是 on_sale，先下架再上架验证恢复
+    products[1].status = "off_sale";
+    const r = await run('上架"调试鞋" 599元 库存99', "catalog_add");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("已上架");
+    expect(products[1].status).toBe("on_sale");
+    // 未创建新商品（总数不变）
+    expect(products.length).toBe(2);
+  });
+
+  it("同名商品不存在 → 创建新商品", async () => {
+    const before = products.length;
+    const r = await run('上架"全新鞋" 299元 库存10', "catalog_add");
+    expect(r.status).toBe("success");
+    expect(products.length).toBe(before + 1);
   });
 });

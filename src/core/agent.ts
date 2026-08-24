@@ -100,8 +100,11 @@ export class Agent {
       // 简化：技能数据域需在用户域内（示例）
     }
 
-    // 语义缓存：命中直接返回（省技能执行；失败不存缓存，防固化）
-    const cached = await getCache().tryGet(s.user_text, manifest.id, config.cacheBusting);
+    // 语义缓存：仅可缓存意图命中（写操作跳过，防返回过期结果）；失败不存缓存防固化
+    const cacheable = !manifest.cacheable_intents || manifest.cacheable_intents.includes(s.intent);
+    const cached = cacheable
+      ? await getCache().tryGet(s.user_text, manifest.id, config.cacheBusting)
+      : null;
     if (cached) {
       usage.recordCacheHit("-", manifest.id, cached.saved_tokens);
       const agg = usage.skillUsage(manifest.id);

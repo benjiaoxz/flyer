@@ -101,7 +101,7 @@ sequenceDiagram
 | `src/core/agent.ts` | 对话引擎：intent→dispatch→remember 三节点 + interrupt + 交互接口（LangGraph JS） | ✅ 已实现 |
 | `src/core/intent.ts` | 意图识别：LLM 结构化输出 + 规则兜底（历史感知）+ 关键词预筛（trigger_keywords 缩小注入清单） | ✅ 已实现 |
 | `src/core/registry.ts` | 技能注册表：意图→技能映射；Skill 基类 | ✅ 已实现 |
-| `src/core/skills_loader.ts` | 技能包机制：扫描 skills/ 自动注册 + skill.yaml manifest 解析（仓库即规范） | ✅ 已实现 |
+| `src/core/skills_loader.ts` | 技能包机制：扫描 src/skills/ 自动注册 + skill.yaml manifest 解析（仓库即规范） | ✅ 已实现 |
 | `src/core/config.ts` | 框架配置（.env，pydantic→TS 手写） | ✅ 已实现 |
 | `src/core/usage.ts` | token 用量记录 + 缓存命中审计（memory/sqlite） | ✅ 已实现 |
 | `src/core/cache.ts` | 语义缓存（可插拔 embedding：ollama/cloud；向量存储 memory/sqlite；仅成功结果入缓存） | ✅ 已实现 |

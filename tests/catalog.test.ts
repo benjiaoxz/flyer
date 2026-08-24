@@ -41,7 +41,7 @@ afterEach(() => {
 });
 
 async function run(text: string, intent: string) {
-  const { default: skill } = await import("../skills/catalog/handlers.js");
+  const { default: skill } = await import("../src/skills/catalog/handlers.js");
   const state = {
     user_text: text,
     user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "jwt-token", shop_id: 1 },
@@ -92,7 +92,7 @@ describe("catalog 技能", () => {
   });
 
   it("无 JWT（未登录）→ error", async () => {
-    const { default: skill } = await import("../skills/catalog/handlers.js");
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
     const state = { user_text: "上架商品", user_ctx: null } as unknown as GenericState;
     const r = await skill.handle(state, { intent: "catalog_add", params: {} } as IntentResult, "上架商品");
     expect(r.status).toBe("error");

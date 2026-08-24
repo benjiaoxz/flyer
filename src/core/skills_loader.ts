@@ -3,14 +3,18 @@
  * 约定：skills/<id>/skill.yaml（manifest 段）+ handlers.ts（默认导出 Skill 实例）
  */
 import { readdirSync, existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
 import { logger } from "./log.js";
 import { SkillRegistry } from "./registry.js";
 import type { Skill, SkillManifest } from "../types/index.js";
 
-export const SKILLS_DIR = process.env.FLYER_SKILLS_DIR || join(process.cwd(), "skills");
+// 技能包目录：相对本模块位置推导（src/core/../../skills → src/skills），不依赖 cwd
+import { fileURLToPath } from "node:url";
+
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+export const SKILLS_DIR = process.env.FLYER_SKILLS_DIR || join(MODULE_DIR, "..", "skills");
 
 const MANIFEST_FIELDS = [
   "name", "description", "intents", "trigger_keywords", "system_prompt",

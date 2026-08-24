@@ -4,9 +4,9 @@
  * 对接业务系统商品 API：X-Biz-Key（服务间鉴权）+ 透传用户 JWT（身份验证）。
  * 领域执行（业务 API 调用）在本技能；harness 负责路由/鉴权/反馈。
  */
-import { config } from "../../src/core/config.js";
-import { logger } from "../../src/core/log.js";
-import type { GenericState, IntentResult, Skill, SkillManifest, SkillResult } from "../../src/types/index.js";
+import { config } from "../../core/config.js";
+import { logger } from "../../core/log.js";
+import type { GenericState, IntentResult, Skill, SkillManifest, SkillResult } from "../../types/index.js";
 
 // ---------------------------------------------------------------- 业务 API 客户端
 /** 调业务系统 API：X-Biz-Key + 透传用户 JWT */

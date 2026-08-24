@@ -16,6 +16,8 @@ export interface UserContext {
   role: string;
   allowed_skills: string[]; // 空 = 全部可用
   data_scopes: string[];    // 空 = 全部数据
+  token: string;            // 原始 JWT（技能调业务系统 API 时透传验证）
+  shop_id?: number;         // 所属店铺（JWT 断言，业务系统验证归属）
 }
 
 /** 技能声明（仓库即规范：skill.yaml 的 manifest 段） */

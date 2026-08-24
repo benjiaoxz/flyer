@@ -43,6 +43,8 @@ export async function verifyJwt(authorization: string | null | undefined): Promi
       role: String(payload.role ?? "user"),
       allowed_skills: Array.isArray(payload.skills) ? payload.skills.map(String) : [],
       data_scopes: Array.isArray(payload.scopes) ? payload.scopes.map(String) : [],
+      token,
+      shop_id: typeof payload.shop_id === "number" ? payload.shop_id : undefined,
     };
   } catch (e) {
     throw new PermissionError(`无效 JWT: ${(e as Error).message}`);

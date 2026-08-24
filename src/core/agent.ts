@@ -27,6 +27,7 @@ const State = Annotation.Root({
   }),
   intent: Annotation<string>({ reducer: (a, b) => b, default: () => "" }),
   intent_params: Annotation<Record<string, unknown>>({ reducer: (a, b) => b, default: () => ({}) }),
+  table_text: Annotation<string>({ reducer: (a, b) => b, default: () => "" }),
   last_skill: Annotation<string>({ reducer: (a, b) => b, default: () => "" }),
   data: Annotation<Record<string, unknown>>({ reducer: (a, b) => ({ ...(a ?? {}), ...(b ?? {}) }), default: () => ({}) }),
   turns: Annotation<number>({ reducer: (a, b) => b, default: () => 0 }),

@@ -48,7 +48,9 @@ export class IntentRecognizer {
   constructor(private registry: SkillRegistry) {}
 
   async recognize(state: GenericState, newText: string): Promise<IntentResult> {
-    const candidates = await this.coarseCandidates(state, newText);
+    // 附件表格兜底：无文字描述但带了表格 → 按"批量处理表格"路由（表格内容驱动，不依赖描述）
+    const query = newText.trim() || (state.table_text ? "批量处理表格商品" : "");
+    const candidates = await this.coarseCandidates(state, query);
     if (candidates.size === 0) {
       return { intent: "fallback", params: {}, raw: "粗筛零命中：无候选技能" };
     }
@@ -58,6 +60,7 @@ export class IntentRecognizer {
     const history = state.messages.length
       ? state.messages.map((m) => `${m.type}: ${m.content}`).join("\n")
       : "（无）";
+    const hasTable = Boolean(state.table_text);
 
     if (!config.dryRun && config.llmApiKey) {
       try {
@@ -76,16 +79,18 @@ export class IntentRecognizer {
           }],
         }).withStructuredOutput(IntentSchema, { method: "functionCalling" });
         const system = this.buildSystem(candidates, intentsDesc);
+        const userContent = `对话历史：\n${history}\n\n用户输入：${query}` +
+          (hasTable ? "\n（用户附带了表格数据，表格与文字描述是分开的两部分，表格内容由技能接收）" : "");
         const res = (await model.invoke([
           { role: "system", content: system },
-          { role: "user", content: `对话历史：\n${history}\n\n用户输入：${newText}` },
+          { role: "user", content: userContent },
         ])) as { intent: string; params?: Record<string, unknown> };
         return { intent: res.intent, params: res.params ?? {} };
       } catch (e) {
         logger.warn(`intent 识别失败，回退规则: ${String(e)}`);
       }
     }
-    return this.ruleFallback(newText);
+    return this.ruleFallback(query);
   }
 
   /** 粗筛：trigger_keywords 命中 + 多轮承接 → 候选技能集 */

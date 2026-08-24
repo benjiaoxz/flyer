@@ -11,6 +11,7 @@ import { config } from "../core/config.js";
 import { logger } from "../core/log.js";
 import { PermissionError, verifyJwt } from "../core/security.js";
 import { usage } from "../core/usage.js";
+import { parseCsvText, parseExcelFile, type ParsedTable } from "../tools/excel.js";
 import type { UserContext } from "../types/index.js";
 
 const ChatReq = z.object({
@@ -50,25 +51,56 @@ export function buildApi(agent: Agent) {
     return key;
   }
 
-  app.post("/api/chat", async (req, reply) => {
-    const parsed = ChatReq.safeParse(req.body);
-    if (!parsed.success) return reply.status(400).send({ detail: parsed.error.message });
-    const { text, thread_id, user_id } = parsed.data;
+  app.post("/api/chat", async (req: any, reply) => {
     const caller = await authorize(req);
-    const init: Record<string, unknown> = { user_text: text, user_id: user_id ?? "" };
+    const callerUserId = typeof caller === "string" ? caller : (caller.user_id ?? "");
+    let text = "";
+    let threadId = "default";
+    let tableText = "";
+    if (req.isMultipart()) {
+      // 一次打包：file（Excel/CSV 表格，可选）+ text（文字描述，可选）+ thread_id
+      // 网关区分：表格 → table_text（CSV 文本），文字描述 → user_text
+      const parts = req.parts();
+      for await (const part of parts) {
+        if (part.type === "file") {
+          const buf = await part.toBuffer();
+          if (callerUserId && callerUserId !== "anonymous") {
+            const fileId = `${Date.now()}-${randomUUID().slice(0, 8)}${part.filename}`;
+            writeFileSync(join(UPLOAD_DIR, fileId), buf);
+            userUploads.set(callerUserId, fileId);
+            logger.info(`[对话附件] ${part.filename} (${buf.length} bytes, user=${callerUserId})`);
+          }
+          tableText = tableToCsv(buf, String(part.filename ?? ""));
+        } else if (part.fieldname === "text") {
+          text = String(part.value ?? "");
+        } else if (part.fieldname === "thread_id") {
+          threadId = String(part.value || "default");
+        }
+      }
+    } else {
+      const parsed = ChatReq.safeParse(req.body);
+      if (!parsed.success) return reply.status(400).send({ detail: parsed.error.message });
+      text = parsed.data.text;
+      threadId = parsed.data.thread_id;
+    }
+    if (!text.trim() && !tableText) {
+      return reply.status(400).send({ detail: "需要文字描述或表格附件" });
+    }
+    const init: Record<string, unknown> = { user_text: text, user_id: callerUserId };
     if (typeof caller !== "string") {
       // jwt：用户身份 + 权限从 token 断言
       init.user_id = caller.user_id;
       init.user_ctx = caller;
     }
-    const snap = await agent.start(init, thread_id);
+    if (tableText) init.table_text = tableText;
+    const snap = await agent.start(init, threadId);
     return reply.send({
       status: snap.__next?.includes("dispatch") ? "need_input" : "result",
       output: snap.output,
       questions: snap.pending_questions ?? [],
       data: snap.data,
       task: snap.task,
-      thread_id,
+      thread_id: threadId,
     });
   });
 
@@ -163,6 +195,26 @@ export function readUploadFile(fileId: string): Buffer | null {
   const path = join(UPLOAD_DIR, fileId);
   if (!existsSync(path)) return null;
   return readFileSync(path);
+}
+
+/** 表格文件 → CSV 文本（网关区分"表格"与"文字描述"：表格进 table_text，文字进 user_text） */
+function tableToCsv(buf: Buffer, filename: string): string {
+  const lower = filename.toLowerCase();
+  let parsed: ParsedTable;
+  try {
+    parsed = lower.endsWith(".csv") || lower.endsWith(".txt")
+      ? parseCsvText(buf.toString("utf8"))
+      : parseExcelFile(buf);
+  } catch {
+    return "";
+  }
+  if (!parsed.rows.length) return "";
+  const { headers, rows } = parsed;
+  const esc = (v: string) => (/[,"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  return [
+    headers.join(","),
+    ...rows.map((r) => headers.map((h) => esc(r[h] ?? "")).join(",")),
+  ].join("\n");
 }
 
 function registerUpload(app: any, authorize: (req: any) => Promise<string | UserContext>) {

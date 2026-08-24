@@ -79,5 +79,7 @@ export interface GenericState {
   pending_questions: string[];
   output: string;
   output_type: string;
+  /** 附件表格（网关解析上传文件后注入的 CSV 文本；技能按需读取，与 user_text 文字描述分离） */
+  table_text: string;
   task: { id: string; steps: Array<{ name: string; status: string; detail: string }>; failed_at?: string };
 }

@@ -19,8 +19,8 @@ beforeEach(() => {
       return { ok: true, json: async () => products } as Response;
     }
     if (path === "/api/products" && method === "POST") {
-      const body = JSON.parse(String(init?.body)) as { name: string; price: number; stock: number };
-      const p = { id: 2, shop_id: 1, ...body, status: "draft" };
+      const body = JSON.parse(String(init?.body)) as { name: string; price: number; stock: number; status?: string };
+      const p = { id: 2, shop_id: 1, ...body, status: body.status ?? "draft" };
       products.push(p);
       return { ok: true, json: async () => p } as Response;
     }
@@ -267,6 +267,7 @@ describe("catalog 批量上架（add_batch）", () => {
     expect(r.output).toContain("成功 2 条");
     expect(products.length).toBe(before + 2);
     expect(products.some((p) => p.name === "批量鞋A" && p.price === 100)).toBe(true);
+    expect(products.some((p) => p.name === "批量鞋A" && p.status === "on_sale")).toBe(true); // 上架创建即在售
     expect(products.some((p) => p.name === "批量鞋B" && p.stock === 20)).toBe(true);
   });
 
@@ -344,6 +345,66 @@ describe("catalog 批量更新（表格批量改价/库存）", () => {
     expect(r.status).toBe("error");
     expect(r.output).toContain("没有库存列");
     expect(products.find((p) => p.name === "调试鞋")?.price).toBe(before); // 价格未被误改
+  });
+});
+
+describe("catalog 表格附件（table_text 一次打包）", () => {
+  const ctx = { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 };
+
+  it("state.table_text 优先于 extra.table：网关打包的表格直接驱动", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\nNike 鞋,159\n调试鞋,129";
+    const r = await skill.handle(
+      { user_text: "批量上架", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_add_batch", params: { extra: { table: "名称,价格\n旧表鞋,1" } } } as never,
+      "批量上架",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 2 条");
+    expect(products.find((p) => p.name === "Nike 鞋")?.price).toBe(159); // 新商品创建
+    expect(products.some((p) => p.name === "旧表鞋")).toBe(false);      // 未被 extra.table 覆盖
+  });
+
+  it("无'上架'字样（表格驱动调整）→ 已存在商品保留原状态", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[1] = { id: 2, shop_id: 1, name: "调试鞋", price: 599, stock: 5, status: "off_sale" };
+    const csv = "名称,价格\n调试鞋,168";
+    const r = await skill.handle(
+      { user_text: "", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_add_batch", params: {} } as never,
+      "",
+    );
+    expect(r.status).toBe("success");
+    expect(products[1].price).toBe(168);
+    expect(products[1].status).toBe("off_sale"); // 表格驱动调整不强制上架
+  });
+
+  it("明确'批量上架' → 已存在商品恢复 on_sale", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[1] = { id: 2, shop_id: 1, name: "调试鞋", price: 599, stock: 5, status: "off_sale" };
+    const csv = "名称,价格\n调试鞋,168";
+    const r = await skill.handle(
+      { user_text: "批量上架", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_add_batch", params: {} } as never,
+      "批量上架",
+    );
+    expect(r.status).toBe("success");
+    expect(products[1].price).toBe(168);
+    expect(products[1].status).toBe("on_sale"); // 明确上架 → 恢复
+  });
+
+  it("批量改价不动状态（下架商品不被意外上架）", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[0] = { id: 1, shop_id: 1, name: "Nike 鞋", price: 299, stock: 50, status: "off_sale" };
+    const csv = "名称,价格\nNike 鞋,259";
+    const r = await skill.handle(
+      { user_text: "用刚才的表格批量调整价格", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_update", params: {} } as never,
+      "用刚才的表格批量调整价格",
+    );
+    expect(r.status).toBe("success");
+    expect(products[0].price).toBe(259);
+    expect(products[0].status).toBe("off_sale");
   });
 });
 

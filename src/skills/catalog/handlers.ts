@@ -156,19 +156,25 @@ async function parseBatchItems(
 }
 
 /** 批量更新商品（"用刚才的表格批量调整价格/库存/改名"）：
- * 读上传文件或粘贴 CSV，逐行按名称定位商品，只更新表格中出现的列（价格/库存） */
+ * 读上传文件或粘贴 CSV，逐行按名称定位商品，只更新表格中出现的列（价格/库存），
+ * 不强制改状态（表格驱动调整语义，避免把下架商品意外上架） */
 async function batchUpdateProducts(
   token: string,
   shopId: number,
   newText: string,
   intent: IntentResult,
-  userId: string,
+  state: GenericState,
 ): Promise<SkillResult> {
   const extra = (intent.params?.extra ?? {}) as Record<string, unknown>;
-  const tableText = (extra.table as string | undefined)
-    ?? (intent.params?.action_detail as string | undefined)
-    ?? newText;
-  const { items, error } = await parseBatchItems(newText, tableText, userId);
+  const tableText = state.table_text   // 网关打包注入的表格（文件+文字一次提交）优先
+    || ((extra.table as string | undefined)
+      ?? (intent.params?.action_detail as string | undefined)
+      ?? newText);
+  const { items, error } = await parseBatchItems(
+    newText,
+    tableText,
+    String(state.user_ctx?.user_id ?? ""),
+  );
   if (error) {
     return { status: "error", output: error, reason: "解析失败", data: {} };
   }
@@ -208,8 +214,7 @@ async function batchUpdateProducts(
       continue;
     }
     try {
-      await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token,
-        { ...patch, status: "on_sale" });
+      await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token, patch);
       success.push(item.name);
     } catch (e) {
       failed.push({ name: item.name, reason: (e as Error).message });
@@ -269,9 +274,10 @@ const skill: Skill = {
         case "add_batch": {
           // 批量上架：从文本提取表格数据（CSV/表格），逐条复用 add 逻辑
           const extra = (intent.params?.extra ?? {}) as Record<string, unknown>;
-          const tableText = (extra.table as string | undefined)
-            ?? (intent.params?.action_detail as string | undefined)
-            ?? newText;
+          const tableText = state.table_text   // 网关打包注入的表格（文件+文字一次提交）优先
+            || ((extra.table as string | undefined)
+              ?? (intent.params?.action_detail as string | undefined)
+              ?? newText);
           const { items, error } = await parseBatchItems(
             newText,
             tableText,
@@ -280,24 +286,27 @@ const skill: Skill = {
           if (error) {
             return { status: "error", output: error, reason: "解析失败", data: {} };
           }
+          // 是否明确"上架"意图（决定已存在商品是否恢复上架；表格驱动调整时不强制改状态）
+          const restoreOnSale = /上架|恢复|重新上架/.test(newText);
           // 逐条上架（复用 add 逻辑，同名恢复/创建）
           const success: string[] = [];
           const failed: Array<{ name: string; reason: string }> = [];
+          const existing = await callBizApi<Product[]>("/api/products", "GET", token);
           for (const item of items) {
             if (!item.name || !item.price) {
               failed.push({ name: item.name ?? "(无名)", reason: "缺名称或价格" });
               continue;
             }
             try {
-              const existing = await callBizApi<Product[]>("/api/products", "GET", token);
               const target = existing.find((x) => x.name === item.name);
               if (target) {
+                // 已存在：更新字段；仅用户明确"上架"时恢复 on_sale（表格驱动调整不动状态）
                 await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token,
-                  { status: "on_sale", ...(item.price ? { price: item.price } : {}), ...(item.stock !== undefined ? { stock: item.stock } : {}) });
+                  { ...(restoreOnSale ? { status: "on_sale" } : {}), ...(item.price ? { price: item.price } : {}), ...(item.stock !== undefined ? { stock: item.stock } : {}) });
                 success.push(item.name);
               } else {
                 await callBizApi<Product>("/api/products", "POST", token,
-                  { shop_id: shopId, name: item.name, price: item.price, stock: item.stock ?? 0 });
+                  { shop_id: shopId, name: item.name, price: item.price, stock: item.stock ?? 0, status: "on_sale" });
                 success.push(item.name);
               }
             } catch (e) {
@@ -348,7 +357,7 @@ const skill: Skill = {
             "/api/products",
             "POST",
             token,
-            { shop_id: shopId, name: product.name, price: product.price, stock: product.stock ?? 0 },
+            { shop_id: shopId, name: product.name, price: product.price, stock: product.stock ?? 0, status: "on_sale" },
           );
           return {
             status: "success",
@@ -384,7 +393,7 @@ const skill: Skill = {
           const isBatchUpdate = (intent.params?.action_detail as string | undefined)?.includes("批量")
             || /批量|表格|文件|excel|xlsx|上传/i.test(newText);
           if (isBatchUpdate) {
-            return await batchUpdateProducts(token, shopId, newText, intent, String(state.user_ctx?.user_id ?? ""));
+            return await batchUpdateProducts(token, shopId, newText, intent, state);
           }
           // 支持改名/改价/改库存任意组合；至少有一个更新目标才执行
           const hasUpdate = product.new_name !== undefined || product.price !== undefined || product.stock !== undefined;

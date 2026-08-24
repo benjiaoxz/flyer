@@ -111,3 +111,23 @@ export async function startApi(agent: Agent, port = 8099): Promise<ReturnType<ty
   logger.info(`flyer API 已启动: http://127.0.0.1:${port}`);
   return app;
 }
+
+// ---------------------------------------------------------------- 直接运行入口
+// npm run api：创建 Agent → 扫描 src/skills/ 技能 → 启动 Fastify
+// 配置从 .env 读取（JWT 公钥 / 业务系统地址等）
+async function main() {
+  const { Agent } = await import("../core/agent.js");
+  const { scanSkills } = await import("../core/skills_loader.js");
+  const agent = new Agent();
+  const n = await scanSkills(agent.registry);
+  logger.info(`技能注册: ${n} 个（${agent.registry.list().map((s) => s.manifest.id).join(", ") || "无"}）`);
+  const app = await startApi(agent, 8099);
+  return app;
+}
+
+if (process.argv[1] && process.argv[1].endsWith("server.ts")) {
+  main().catch((e) => {
+    logger.error(`网关启动失败: ${String(e)}`);
+    process.exit(1);
+  });
+}

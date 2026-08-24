@@ -1,17 +1,16 @@
 {
   "name": "flyer",
   "version": "0.1.0",
-  "description": "通用对话 Agent 框架（TS 版）：model + harness，业务技能插件化",
+  "description": "商城智能交互网关：商城界面与业务系统之间的 Agent 编排层（model + harness）",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
     "api": "tsx src/api/server.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
@@ -23,14 +22,12 @@
     "dotenv": "^17.4.2",
     "fastify": "^5.12.1",
     "jose": "^6.2.10",
-    "langchain": "^1.5.10",
-    "pg": "^8.23.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.2.0",
-    "@types/pg": "^8.23.1",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11"

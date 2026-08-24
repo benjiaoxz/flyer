@@ -71,14 +71,13 @@ describe("JWT 验证端", () => {
 
 describe("API 鉴权闭环", () => {
   let app: ReturnType<typeof buildApi>;
-  let server: ReturnType<typeof app.listen>;
 
   beforeAll(async () => {
     const agent = new Agent();
     agent.registry.register(new OrderSkill());
     agent.registry.register(new SecretSkill());
     app = buildApi(agent);
-    server = await app.listen({ port: 0 });
+    await app.listen({ port: 0 });
   });
 
   afterAll(async () => {

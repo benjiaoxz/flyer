@@ -11,30 +11,31 @@ import { usage } from "./usage.js";
 import { IntentRecognizer } from "./intent.js";
 import { logger } from "./log.js";
 import { SkillRegistry } from "./registry.js";
-import { SkillResultSchema, type GenericState, type IntentResult, type UserContext } from "../types/index.js";
+import { SkillResultSchema, type GenericState, type IntentResult, type SkillResult, type UserContext } from "../types/index.js";
 
+// LangGraph state 字段定义（reducer 显式标注类型，v1 需要）
 const State = Annotation.Root({
-  user_text: Annotation({ reducer: (a, b) => b, default: () => "" }),
-  user_id: Annotation({ reducer: (a, b) => b, default: () => "" }),
-  user_ctx: Annotation({
+  user_text: Annotation<string>({ reducer: (a, b) => b, default: () => "" }),
+  user_id: Annotation<string>({ reducer: (a, b) => b, default: () => "" }),
+  user_ctx: Annotation<UserContext | null>({
     reducer: (a, b) => b,
-    default: () => null as UserContext | null,
+    default: () => null,
   }),
-  messages: Annotation({
+  messages: Annotation<GenericState["messages"]>({
     reducer: (a, b) => [...(a ?? []), ...(b ?? [])],
-    default: () => [] as GenericState["messages"],
+    default: () => [],
   }),
-  intent: Annotation({ reducer: (a, b) => b, default: () => "" }),
-  intent_params: Annotation({ reducer: (a, b) => b, default: () => ({}) }),
-  last_skill: Annotation({ reducer: (a, b) => b, default: () => "" }),
-  data: Annotation({ reducer: (a, b) => ({ ...(a ?? {}), ...(b ?? {}) }), default: () => ({}) }),
-  turns: Annotation({ reducer: (a, b) => b, default: () => 0 }),
-  pending_questions: Annotation({ reducer: (a, b) => b, default: () => [] as string[] }),
-  output: Annotation({ reducer: (a, b) => b, default: () => "" }),
-  output_type: Annotation({ reducer: (a, b) => b, default: () => "text" }),
-  task: Annotation({
+  intent: Annotation<string>({ reducer: (a, b) => b, default: () => "" }),
+  intent_params: Annotation<Record<string, unknown>>({ reducer: (a, b) => b, default: () => ({}) }),
+  last_skill: Annotation<string>({ reducer: (a, b) => b, default: () => "" }),
+  data: Annotation<Record<string, unknown>>({ reducer: (a, b) => ({ ...(a ?? {}), ...(b ?? {}) }), default: () => ({}) }),
+  turns: Annotation<number>({ reducer: (a, b) => b, default: () => 0 }),
+  pending_questions: Annotation<string[]>({ reducer: (a, b) => b, default: () => [] }),
+  output: Annotation<string>({ reducer: (a, b) => b, default: () => "" }),
+  output_type: Annotation<string>({ reducer: (a, b) => b, default: () => "text" }),
+  task: Annotation<GenericState["task"]>({
     reducer: (a, b) => b,
-    default: () => ({ id: "", steps: [] as GenericState["task"]["steps"] }),
+    default: () => ({ id: "", steps: [] }),
   }),
 });
 
@@ -43,7 +44,7 @@ type Snapshot = GenericState & { __next?: string[] };
 export class Agent {
   readonly registry: SkillRegistry;
   private recognizer: IntentRecognizer;
-  private graph: ReturnType<typeof StateGraph<typeof State>["prototype"]["compile"]>;
+  private graph: any;  // CompiledStateGraph（langgraph v1 泛型复杂，运行时安全）
 
   constructor(registry?: SkillRegistry, checkpointer?: unknown) {
     this.registry = registry ?? new SkillRegistry();
@@ -110,7 +111,7 @@ export class Agent {
 
     // 执行技能（结果契约：SkillResult 校验；异常视为 error 不崩）
     this.recordTaskStep(task, `execute:${manifest.id}`, "running");
-    let updates: { status: string; output: string; reason: string; data: Record<string, unknown> };
+    let updates: SkillResult;
     try {
       const raw = await skill.handle(s, { intent: s.intent, params: s.intent_params }, s.user_text);
       updates = this.normalizeResult(raw);
@@ -128,9 +129,9 @@ export class Agent {
     }
     // 结果检查：失败记 outcome + 不存缓存（缓存 M4 接入）
     if (updates.status === "error") {
-      this.recordOutcome("error", "execute", updates.reason, updates.output);
+      this.recordOutcome("error", "execute", updates.reason ?? "", updates.output ?? "");
       task.failed_at = "execute";
-      this.recordTaskStep(task, `execute:${manifest.id}`, "error", updates.reason);
+      this.recordTaskStep(task, `execute:${manifest.id}`, "error", updates.reason ?? "");
     } else {
       // P2 结果验证：技能声明 verify 则执行后自证，未通过 → 按失败处理（不存缓存）
       let verified = true;
@@ -170,15 +171,15 @@ export class Agent {
   }
 
   // ------------------------------------------------------------ 结果契约
-  private normalizeResult(raw: unknown): { status: string; output: string; reason: string; data: Record<string, unknown> } {
+  private normalizeResult(raw: unknown): SkillResult {
     const parsed = SkillResultSchema.safeParse(raw);
     if (parsed.success) {
-      return parsed.data;
+      return parsed.data as SkillResult;
     }
     logger.warn(`[契约违规] 技能返回不合规: ${JSON.stringify(raw)} type=${typeof raw}`);
     this.recordOutcome("error", "contract", `SkillResult 校验失败: ${parsed.error.message}`, JSON.stringify(raw).slice(0, 200));
     return {
-      status: "error",
+      status: "error" as const,
       output: `技能返回结果不合规: ${parsed.error.message}`,
       reason: "contract_violation",
       data: {},
@@ -211,7 +212,7 @@ export class Agent {
   }
 
   async resume(answer: string, threadId = "default"): Promise<Snapshot> {
-    await this.graph.invoke(Command.resume(answer), { configurable: { thread_id: threadId } });
+    await this.graph.invoke(new Command({ resume: answer }), { configurable: { thread_id: threadId } });
     return this.snapshot(threadId);
   }
 

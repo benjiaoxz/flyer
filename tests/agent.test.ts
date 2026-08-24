@@ -97,8 +97,8 @@ describe("结果契约（M3）", () => {
       id: "badcontract", name: "坏契约", description: "返回不合规",
       intents: ["new_request", "bc_do"], max_turns_per_session: 5,
     };
-    handle(): unknown {
-      return { output: "忘了标 status" };
+    handle(): any {
+      return { output: "忘了标 status" };  // 故意违反契约
     }
   }
 

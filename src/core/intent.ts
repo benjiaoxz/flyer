@@ -16,7 +16,7 @@ const BUILTIN_INTENTS: Record<string, string> = {
 
 const IntentSchema = z.object({
   intent: z.string(),
-  params: z.record(z.unknown()).default({}),
+  params: z.record(z.string(), z.unknown()).default({}),
   needs_input: z.boolean().optional(),
   questions: z.array(z.string()).optional(),
 });

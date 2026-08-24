@@ -18,7 +18,7 @@
 - **任务状态**：任务 id + 步骤轨迹（intent/execute/技能子步骤）+ 失败定位 failed_at
 - **语义缓存**：可插拔 embedding（ollama/cloud）+ 向量存储（memory/sqlite），重复问题命中直接返回
 - **JWT 鉴权**：业务方签发 JWT（RS256）→ 验证 → UserContext（角色/技能白名单/数据域）强制裁剪
-- **技能包机制**：`src/skills/<id>/` 即自动注册（skill.yaml 声明 + handlers.ts 实现）
+- **技能包机制**：`src/skills/<id>/` 即自动注册（skill.yaml 声明 + handlers.ts 实现 + **README.md 技能文档**——每个技能包自带文档，说明用途/意图/流程/边界，见 `src/skills/catalog/` 范例）
 
 ## 技术栈
 

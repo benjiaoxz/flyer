@@ -122,8 +122,8 @@
 - [ ] flyer 侧：`core/security.verify_jwt()`（RS256 验签/过期/kid）；`AUTH_MODE=jwt`
 - [ ] flyer 侧：`core/user.USER_PROVIDER=jwt`（从 payload 构造 UserContext）
 - [ ] flyer 侧：api.py authorize 升级（token → UserContext）；报表按 token 归属隔离
-- [ ] flyer-biz（兄弟项目）：JWT 签发（RS256 私钥）+ /api/jwks 公钥发布 + 密钥轮换
-- [ ] 闭环：商家登录 → 调 flyer（带 JWT）→ catalog 技能调 biz 业务 API（业务 Key + 透传 JWT）→ 回读验证
+- [ ] 业务系统侧：JWT 签发（RS256 私钥）+ /api/jwks 公钥发布 + 密钥轮换
+- [ ] 闭环：用户登录业务系统 → 调 flyer（带 JWT）→ 技能调业务系统 API（业务 Key + 透传 JWT）→ 回读验证
 
 ---
 

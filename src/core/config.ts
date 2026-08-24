@@ -11,7 +11,7 @@ export interface Config {
   // 鉴权
   authMode: "none" | "api_key" | "jwt";
   apiKeys: string[];
-  jwtPublicKeyB64: string;   // base64 单行 PEM（flyer-biz 签发）
+  jwtPublicKeyB64: string;   // base64 单行 PEM（业务系统签发）
   jwtAlgorithm: string;
   // 存储
   vectorStore: "memory" | "sqlite";
@@ -28,7 +28,7 @@ export interface Config {
   embeddingOllamaUrl: string;
   embeddingCloudApiKey: string;
   embeddingCloudBaseUrl: string;
-  // 业务库（flyer-biz 对接）
+  // 业务系统对接（商城后端；技能通过业务 API 执行）
   bizBaseUrl: string;
   bizApiKey: string;
 }

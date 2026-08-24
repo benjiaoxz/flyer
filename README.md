@@ -8,7 +8,7 @@
 - **执行**：调业务系统 API（业务能力以 Skill 插件形式接入）
 - **反馈**：结果契约（SkillResult）/ 失败定位 / 任务轨迹 / 用量审计
 
-> 业务系统为外部系统，当前开发用 **flyer-biz**（独立项目）模拟。完整设计见 [docs/](docs/)。
+> 业务系统为外部系统（商城后端），网关通过业务 API 对接，业务能力以 Skill 插件接入。完整设计见 [docs/](docs/)。
 
 ## 核心能力（harness）
 
@@ -40,16 +40,16 @@ npm run api                 # 启动 Fastify API（默认 8099）
 npm test                    # 22 个测试（vitest）
 ```
 
-## 与 flyer-biz（业务服务器）联调
+## 与业务系统对接
 
 ```
-商家登录 flyer-biz → JWT（sub/role/scopes/skills）
+商城用户登录业务系统 → JWT（sub/role/scopes/skills，业务系统签发）
   → 调 flyer /api/chat（Bearer JWT）
   → flyer 验证 RS256 公钥 → UserContext → 技能白名单强制
-  → 技能调 flyer-biz 业务 API（X-Biz-Key + 透传 JWT）
+  → 技能调业务系统 API（X-Biz-Key + 透传 JWT）
 ```
 
-配置见 `.env.example`（`AUTH_MODE=none/api_key/jwt`；`JWT_PUBLIC_KEY` = flyer-biz 公钥 base64）。
+配置见 `.env.example`（`AUTH_MODE=none/api_key/jwt`；`JWT_PUBLIC_KEY` = 业务系统签发的公钥 base64；`BIZ_BASE_URL`/`BIZ_API_KEY` = 业务系统对接）。
 
 ## 项目文档
 

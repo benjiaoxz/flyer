@@ -10,6 +10,7 @@ let products: Array<{ id: number; shop_id: number; name: string; price: number; 
 beforeEach(() => {
   products = [
     { id: 1, shop_id: 1, name: "Nike 鞋", price: 299, stock: 50, status: "on_sale" },
+    { id: 2, shop_id: 1, name: "调试鞋", price: 599, stock: 5, status: "on_sale" },
   ];
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const path = String(url).replace(config.bizBaseUrl, "");
@@ -125,5 +126,20 @@ describe("catalog new_request 动作猜测（无 LLM 兜底）", () => {
     const r = await run('下架"Nike 鞋"', "new_request");
     expect(r.status).toBe("success");
     expect(r.output).toContain("已下架");
+  });
+});
+
+describe("catalog 字段解析增强（用户真实输入）", () => {
+  it("价格改为199（无'元'后缀）→ 解析出价格", async () => {
+    const r = await run('帮我把调试鞋价格改为199', "catalog_update");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("199元");
+  });
+
+  it("引号名称价格 → 名称清洗不带引号", async () => {
+    const r = await run('帮我把"调试鞋"价格改为"199元"', "catalog_update");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("「调试鞋」");
+    expect(r.output).not.toContain('"调试鞋"');
   });
 });

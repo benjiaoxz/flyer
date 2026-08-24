@@ -73,18 +73,22 @@ const manifest: SkillManifest = {
  */
 function parseProduct(text: string): { name?: string; price?: number; stock?: number } {
   const out: { name?: string; price?: number; stock?: number } = {};
-  // 引号包裹的名称（最明确）
+  // 引号包裹的名称（最明确）；清洗掉引号字符
   const quoted = text.match(/["'「」《](.+?)["'」》]/);
   if (quoted) {
-    out.name = quoted[1];
+    out.name = quoted[1].trim();
   } else {
     // 无引号：从"把X的库存/价格"或"改X"提取
     const withStock = text.match(/(?:把|将)(.+?)(?:的)?(?:库存|价格|数量)/);
     const withChange = text.match(/(?:改|修改)(.+?)(?:的)?(?:价格|库存|为|到)/);
     const anyMatch = text.match(/(?:把|将|改|修改)([^，。,\s]+)/);
-    out.name = (withStock?.[1] ?? withChange?.[1] ?? anyMatch?.[1] ?? "").replace(/[的将把]/g, "").trim() || undefined;
+    out.name = (withStock?.[1] ?? withChange?.[1] ?? anyMatch?.[1] ?? "")
+      .replace(/[的将把"'"'「」《》]/g, "").trim() || undefined;
   }
-  const priceMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:元|块)/);
+  // 价格：支持"价格改为N""改为N元""价格N元"N元"等（N 后可不带"元"）
+  const priceMatch = text.match(
+    /(?:价格|单价|售价|定价)?(?:改为|改成|调成|设为|调整|调)?(\d+(?:\.\d+)?)\s*(?:元|块)?/,
+  );
   if (priceMatch) out.price = Number(priceMatch[1]);
   const stockMatch = text.match(/(?:库存|数量)(?:\s*|改成|改为|调成|设为|变成|为)\s*(\d+)/);
   if (stockMatch) out.stock = Number(stockMatch[1]);

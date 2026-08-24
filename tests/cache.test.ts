@@ -43,3 +43,16 @@ describe("语义缓存", () => {
     expect(await cache.tryGet("今天天气怎么样", "order")).toBeNull();
   });
 });
+
+
+describe("excel 工具层", () => {
+  it("CSV 文本解析 → 结构化行", async () => {
+    const { parseCsvText } = await import("../src/tools/excel.js");
+    const t = parseCsvText("名称,价格,库存\n鞋A,100,10\n鞋B,200,20");
+    expect(t.headers).toEqual(["名称", "价格", "库存"]);
+    expect(t.rows).toEqual([
+      { 名称: "鞋A", 价格: "100", 库存: "10" },
+      { 名称: "鞋B", 价格: "200", 库存: "20" },
+    ]);
+  });
+});

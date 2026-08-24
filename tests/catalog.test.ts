@@ -252,3 +252,34 @@ describe("catalog 改名（new_name）", () => {
     expect(products[0].name).toBe("Nike Pro");
   });
 });
+
+describe("catalog 批量上架（add_batch）", () => {
+  it("CSV 文本批量上架 → 逐条创建", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格,库存\n批量鞋A,100,10\n批量鞋B,200,20";
+    const before = products.length;
+    const r = await skill.handle(
+      { user_text: "批量上架", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_add_batch", params: { extra: { table: csv } } } as never,
+      "批量上架",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 2 条");
+    expect(products.length).toBe(before + 2);
+    expect(products.some((p) => p.name === "批量鞋A" && p.price === 100)).toBe(true);
+    expect(products.some((p) => p.name === "批量鞋B" && p.stock === 20)).toBe(true);
+  });
+
+  it("部分行缺字段 → 记失败不崩", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格,库存\n完整鞋,100,10\n缺价鞋,,";
+    const r = await skill.handle(
+      { user_text: "批量上架", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_add_batch", params: { extra: { table: csv } } } as never,
+      "批量上架",
+    );
+    expect(r.output).toContain("成功 1 条");
+    expect(r.output).toContain("失败 1 条");
+    expect(r.output).toContain("缺价鞋");
+  });
+});

@@ -54,15 +54,16 @@ const manifest: SkillManifest = {
   id: "catalog",
   name: "商品管理",
   description: "商家上架/查询/修改/下架商品（对接业务系统）",
-  intents: ["new_request", "catalog_add", "catalog_query", "catalog_update", "catalog_off"],
+  intents: ["new_request", "catalog_add", "catalog_add_batch", "catalog_query", "catalog_update", "catalog_off"],
   intent_descriptions: {
     catalog_add: "上架商品（用户说上架X时用；含创建或恢复）",
+    catalog_add_batch: "批量上架商品（用户提供 Excel 文件或 CSV/表格文本，含多行商品数据）",
     catalog_query: "查询/查看商品信息（用户说'给我X信息''查X''看X''X的价格库存状态'时用——只读不改）",
     catalog_update: "修改/调整商品价格或库存（用户明确说改/调/修改时才用；仅查信息不是修改）",
     catalog_off: "下架商品（用户说下架/删除X时用）",
   },
   cacheable_intents: ["catalog_query"],  // 写操作（上架/改/下架）不缓存
-  trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格", "信息", "详情", "查询", "查看", "给我", "名称", "改名", "修改", "调整"],
+  trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格", "信息", "详情", "查询", "查看", "给我", "名称", "改名", "修改", "调整", "批量", "Excel", "excel", "表格", "CSV", "csv"],
   session_mode: "single",
   max_turns_per_session: 1,
   auto_keywords: true,
@@ -149,6 +150,68 @@ const skill: Skill = {
       };
 
       switch (action) {
+        case "add_batch": {
+          // 批量上架：从文本提取表格数据（CSV/表格），逐条复用 add 逻辑
+          const extra = (intent.params?.extra ?? {}) as Record<string, unknown>;
+          const tableText = (extra.table as string | undefined)
+            ?? (intent.params?.action_detail as string | undefined)
+            ?? newText;
+          const { parseCsvText } = await import("../../tools/excel.js");
+          let items: Array<{ name?: string; price?: number; stock?: number }>;
+          try {
+            // LLM 抽取的表格可能被重新格式化，解析为空时回退用原始输入
+            let parsed = parseCsvText(tableText);
+            if (!parsed.rows.length && tableText !== newText) {
+              parsed = parseCsvText(newText);
+            }
+            if (!parsed.rows.length) {
+              return { status: "error", output: "未解析到商品数据（需要表格：名称,价格,库存 每行一个）", reason: "空表格", data: {} };
+            }
+            items = parsed.rows.map((r) => {
+              const keys = Object.keys(r);
+              const nameKey = keys.find((k) => /名称|商品|name/i.test(k)) ?? keys[0];
+              const priceKey = keys.find((k) => /价格|单价|price/i.test(k));
+              const stockKey = keys.find((k) => /库存|数量|stock/i.test(k));
+              return {
+                name: r[nameKey] || undefined,
+                price: priceKey ? Number(r[priceKey]) || undefined : undefined,
+                stock: stockKey ? Number(r[stockKey]) || undefined : undefined,
+              };
+            });
+          } catch (e) {
+            return { status: "error", output: `批量数据解析失败：${(e as Error).message}`, reason: "解析失败", data: {} };
+          }
+          // 逐条上架（复用 add 逻辑，同名恢复/创建）
+          const success: string[] = [];
+          const failed: Array<{ name: string; reason: string }> = [];
+          for (const item of items) {
+            if (!item.name || !item.price) {
+              failed.push({ name: item.name ?? "(无名)", reason: "缺名称或价格" });
+              continue;
+            }
+            try {
+              const existing = await callBizApi<Product[]>("/api/products", "GET", token);
+              const target = existing.find((x) => x.name === item.name);
+              if (target) {
+                await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token,
+                  { status: "on_sale", ...(item.price ? { price: item.price } : {}), ...(item.stock !== undefined ? { stock: item.stock } : {}) });
+                success.push(item.name);
+              } else {
+                await callBizApi<Product>("/api/products", "POST", token,
+                  { shop_id: shopId, name: item.name, price: item.price, stock: item.stock ?? 0 });
+                success.push(item.name);
+              }
+            } catch (e) {
+              failed.push({ name: item.name, reason: (e as Error).message });
+            }
+          }
+          return {
+            status: failed.length ? "error" : "success",
+            output: `📊 批量上架完成：成功 ${success.length} 条${failed.length ? `，失败 ${failed.length} 条（${failed.map((f) => `${f.name}:${f.reason}`).join("；")}）` : ""}`,
+            reason: failed.length ? `部分失败: ${failed.map((f) => f.name).join("、")}` : "",
+            data: { success_count: success.length, failed_count: failed.length },
+          };
+        }
         case "add": {
           if (!product.name) {
             return {

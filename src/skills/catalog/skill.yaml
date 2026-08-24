@@ -5,13 +5,14 @@ enabled: true
 manifest:
   name: 商品管理
   description: 商家上架/查询/修改/下架商品（对接业务系统）
-  intents: [new_request, catalog_add, catalog_query, catalog_update, catalog_off]
+  intents: [new_request, catalog_add, catalog_add_batch, catalog_query, catalog_update, catalog_off]
   intent_descriptions:
     catalog_add: 上架商品（用户说"上架X"时用；含创建或恢复）
+    catalog_add_batch: 批量上架商品（用户提供 Excel 文件或 CSV/表格文本，含多行商品数据）
     catalog_query: 查询/查看商品信息（用户说"给我X信息""查X""看X""X的价格库存状态"时用——只读，不改任何东西）
     catalog_update: 修改/调整商品价格或库存（用户明确说"改/调/修改"时才用；仅"查信息"不是修改）
     catalog_off: 下架商品（用户说"下架/删除X"时用）
-  trigger_keywords: [上架, 商品, 下架, 改价, 库存, 价格, 信息, 详情, 查询, 查看, 给我, 名称, 改名, 修改, 调整]
+  trigger_keywords: [上架, 商品, 下架, 改价, 库存, 价格, 信息, 详情, 查询, 查看, 给我, 名称, 改名, 修改, 调整, 批量, Excel, excel, 表格, CSV, csv]
   session_mode: single
   max_turns_per_session: 1
   auto_keywords: true   # 用 LLM 从意图描述自动生成 trigger_keywords（与手写合并）

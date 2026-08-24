@@ -63,7 +63,7 @@ const manifest: SkillManifest = {
   },
   trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格"],
   session_mode: "single",
-  max_turns_per_session: 2,
+  max_turns_per_session: 1,
   max_llm_calls_per_turn: 2,
   data_scopes: ["shop"],
 };

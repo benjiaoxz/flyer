@@ -1,5 +1,5 @@
 /** Agent 核心测试：三节点流程 + 意图路由 + 用户隔离 */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Agent } from "../src/core/agent.js";
 import { BaseSkill } from "../src/core/registry.js";

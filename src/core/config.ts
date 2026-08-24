@@ -24,6 +24,8 @@ export interface Config {
   checkpointDbPath: string;
   // embedding
   embeddingProvider: "none" | "ollama" | "cloud";
+  // 意图预筛 embedding 召回：关键词零命中时的语义兜底（cosine 阈值）
+  recallThreshold: number;
   embeddingModel: string;
   embeddingOllamaUrl: string;
   embeddingCloudApiKey: string;
@@ -60,6 +62,7 @@ export const config: Config = {
   checkpointDbPath: env("CHECKPOINT_DB_PATH", "data/agent_checkpoints.db"),
 
   embeddingProvider: (env("EMBEDDING_PROVIDER", "") as Config["embeddingProvider"] || "none"),
+  recallThreshold: Number(env("RECALL_THRESHOLD", "0.75")),
   embeddingModel: env("EMBEDDING_MODEL", "bge-m3:567m"),
   embeddingOllamaUrl: env("EMBEDDING_OLLAMA_URL", "http://localhost:11434"),
   embeddingCloudApiKey: env("EMBEDDING_CLOUD_API_KEY"),

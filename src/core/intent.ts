@@ -4,11 +4,13 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
 
+import { cosineSimilarity } from "./cache.js";
 import { config } from "./config.js";
+import { embedText } from "./embedding.js";
 import { usage } from "./usage.js";
 import { logger } from "./log.js";
 import { SkillRegistry } from "./registry.js";
-import type { GenericState, IntentResult } from "../types/index.js";
+import type { GenericState, IntentResult, Skill } from "../types/index.js";
 
 const BUILTIN_INTENTS: Record<string, string> = {
   new_request: "用户提出全新的需求/请求",
@@ -46,7 +48,7 @@ export class IntentRecognizer {
   constructor(private registry: SkillRegistry) {}
 
   async recognize(state: GenericState, newText: string): Promise<IntentResult> {
-    const candidates = this.coarseCandidates(state, newText);
+    const candidates = await this.coarseCandidates(state, newText);
     if (candidates.size === 0) {
       return { intent: "fallback", params: {}, raw: "粗筛零命中：无候选技能" };
     }
@@ -87,12 +89,29 @@ export class IntentRecognizer {
   }
 
   /** 粗筛：trigger_keywords 命中 + 多轮承接 → 候选技能集 */
-  coarseCandidates(state: GenericState, newText: string): Set<string> {
+  /** 技能代表向量缓存：description + trigger_keywords 的 embedding（惰性） */
+  private skillVectors = new Map<string, number[] | null>();
+
+  async coarseCandidates(state: GenericState, newText: string): Promise<Set<string>> {
     const candidates = new Set<string>();
-    for (const skill of this.registry.list()) {
+    const skills = this.registry.list();
+    // ① 关键词命中（确定性，零成本）
+    for (const skill of skills) {
       const kws = skill.manifest.trigger_keywords ?? [];
       if (kws.length === 0 || kws.some((kw) => newText.includes(kw))) {
         candidates.add(skill.manifest.id);
+      }
+    }
+    // ② 关键词零命中 → embedding 召回兜底（语义相似，防漏）
+    if (candidates.size === 0 && skills.length > 0) {
+      const queryVec = await embedText(newText);
+      if (queryVec) {
+        for (const skill of skills) {
+          const vec = await this.skillVector(skill);
+          if (vec && cosineSimilarity(queryVec, vec) >= config.recallThreshold) {
+            candidates.add(skill.manifest.id);
+          }
+        }
       }
     }
     // 多轮承接：上一轮技能（multi 模式）保留
@@ -100,6 +119,19 @@ export class IntentRecognizer {
       candidates.add(state.last_skill);
     }
     return candidates;
+  }
+
+  /** 技能代表向量（缓存）：description + trigger_keywords 拼接 embedding */
+  private async skillVector(skill: Skill): Promise<number[] | null> {
+    if (this.skillVectors.has(skill.manifest.id)) {
+      return this.skillVectors.get(skill.manifest.id) ?? null;
+    }
+    // 代表向量：意图描述（语义最丰富）优先，回落 description + keywords
+    const intentDesc = Object.values(skill.manifest.intent_descriptions ?? {}).join(" ");
+    const seed = intentDesc || [skill.manifest.description, ...(skill.manifest.trigger_keywords ?? [])].join(" ");
+    const vec = await embedText(seed);
+    this.skillVectors.set(skill.manifest.id, vec);
+    return vec;
   }
 
   private skillIntentDesc(candidates: Set<string>): Record<string, string> {

@@ -36,6 +36,8 @@ export interface SkillManifest {
   intent_descriptions?: Record<string, string>;
   /** 仅这些意图可命中语义缓存（写操作不应缓存，防返回过期结果）；空=全部可缓存 */
   cacheable_intents?: string[];
+  /** true=加载时用 LLM 从意图描述自动生成 trigger_keywords（与手写合并） */
+  auto_keywords?: boolean;
   trigger_keywords?: string[];
   system_prompt?: string;
   session_mode?: "single" | "multi";

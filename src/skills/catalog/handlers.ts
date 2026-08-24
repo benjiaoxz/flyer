@@ -65,6 +65,7 @@ const manifest: SkillManifest = {
   trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格", "信息", "详情", "查询", "查看", "给我", "名称", "改名", "修改", "调整"],
   session_mode: "single",
   max_turns_per_session: 1,
+  auto_keywords: true,
   max_llm_calls_per_turn: 2,
   data_scopes: ["shop"],
 };

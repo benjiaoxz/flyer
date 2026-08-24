@@ -65,6 +65,15 @@ export async function scanSkills(registry: SkillRegistry): Promise<number> {
         logger.warn(`技能 ${skillId} 未导出 Skill（default），跳过`);
         continue;
       }
+      // auto_keywords：用 LLM 从意图描述生成关键词，与手写合并
+      if (skill.manifest.auto_keywords) {
+        const generated = await generateKeywords(skill.manifest);
+        if (generated?.length) {
+          const merged = [...new Set([...(skill.manifest.trigger_keywords ?? []), ...generated])];
+          skill.manifest.trigger_keywords = merged;
+          logger.info(`技能 ${skillId} LLM 生成关键词: ${generated.join("、")}`);
+        }
+      }
       registry.register(skill);
       count += 1;
       logger.info(`自动注册技能: ${skillId}`);
@@ -73,4 +82,42 @@ export async function scanSkills(registry: SkillRegistry): Promise<number> {
     }
   }
   return count;
+}
+
+/** LLM 生成 trigger_keywords：从技能描述/意图描述推断用户可能的触发说法。
+ * auto_keywords=true 时调用；失败返回 null（回落到手写关键词）。
+ */
+export async function generateKeywords(manifest: SkillManifest): Promise<string[] | null> {
+  const { config } = await import("./config.js");
+  if (config.dryRun || !config.llmApiKey) return null;  // 无 LLM 不生成
+  const { ChatOpenAI } = await import("@langchain/openai");
+  const { z } = await import("zod");
+  try {
+    const model = new ChatOpenAI({
+      model: config.llmModel,
+      apiKey: config.llmApiKey,
+      configuration: { baseURL: config.llmBaseUrl },
+    }).withStructuredOutput(
+      z.object({ keywords: z.array(z.string()) }),
+      { method: "functionCalling" },
+    );
+    const intentDesc = Object.entries(manifest.intent_descriptions ?? {})
+      .map(([k, v]) => `${k}: ${v}`).join("\n");
+    const res = (await model.invoke([
+      {
+        role: "system",
+        content: "你是技能关键词生成器。根据技能职责和意图描述，列出用户可能用来触发这个技能的中文短词。要求：1) 每个词 2-4 个汉字，优先动作词（如\"上架\"\"撤下\"\"调价\"）和核心业务词（如\"商品\"\"库存\"\"价格\"\"名称\"）；2) 覆盖口语说法（如\"看看\"\"调一下\"\"改改\"）；3) 不要复合长短语（如\"撤下商品\"应拆为\"撤下\"和\"商品\"）。只返回关键词列表。",
+      },
+      {
+        role: "user",
+        content: `技能：${manifest.name}（${manifest.description}）\n意图：\n${intentDesc || "（无）"}`,
+      },
+    ])) as { keywords: string[] };
+    // 去重 + 过滤太短的
+    const kws = [...new Set(res.keywords.filter((k) => k.length >= 2))];
+    return kws.length ? kws : null;
+  } catch (e) {
+    console.warn(`生成关键词失败（${manifest.id}）: ${String(e)}`);
+    return null;
+  }
 }

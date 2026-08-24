@@ -14,5 +14,6 @@ manifest:
   trigger_keywords: [上架, 商品, 下架, 改价, 库存, 价格, 信息, 详情, 查询, 查看, 给我, 名称, 改名, 修改, 调整]
   session_mode: single
   max_turns_per_session: 1
+  auto_keywords: true   # 用 LLM 从意图描述自动生成 trigger_keywords（与手写合并）
   max_llm_calls_per_turn: 2
   data_scopes: [shop]

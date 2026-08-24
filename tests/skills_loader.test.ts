@@ -56,3 +56,12 @@ describe("技能包机制", () => {
     expect(loadSkillManifest("noskill")).toBeNull();
   });
 });
+
+describe("LLM 生成关键词（auto_keywords）", () => {
+  it("generateKeywords 在无 LLM 时返回 null（dry-run 不生成）", async () => {
+    const { generateKeywords } = await import("../src/core/skills_loader.js");
+    const m = { id: "demo", name: "示例", description: "演示", intents: ["demo_do"] } as never;
+    const r = await generateKeywords(m);
+    expect(r).toBeNull();  // 测试环境 dry-run，不调 LLM
+  });
+});

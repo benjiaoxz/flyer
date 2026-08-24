@@ -130,6 +130,20 @@ function statusFromCell(v: string | undefined): string | undefined {
   return undefined;
 }
 
+/** 表格列名同义词（模糊匹配表头→业务字段；列位置任意，不按列号固定） */
+const COLUMN_ALIASES: Record<"id" | "name" | "price" | "stock" | "status", RegExp> = {
+  id: /^id$|编号|序号|编码/i,
+  name: /名称|品名|商品名|商品|名字|name|product|title/i,
+  price: /价格|单价|售价|定价|卖价|金额|price|amount|money/i,
+  stock: /库存|数量|件数|余量|存量|stock|quantity|qty/i,
+  status: /状态|上架|下架|status/i,
+};
+
+/** 表头 → 业务列名（第一个命中的列；找不到返回 undefined） */
+function findColumn(headers: string[], field: keyof typeof COLUMN_ALIASES): string | undefined {
+  return headers.find((h) => COLUMN_ALIASES[field].test(h.trim()));
+}
+
 async function parseBatchItems(
   newText: string,
   tableText: string,
@@ -153,13 +167,17 @@ async function parseBatchItems(
       }
     }
     if (!parsed.rows.length) return { items: [], error: "未解析到商品数据（需要表格：名称,价格,库存 每行一个）" };
+    // 按同义词匹配表头 → 业务列（列位置任意）
+    const headers = parsed.headers;
+    const idKey = findColumn(headers, "id");
+    const nameKey = findColumn(headers, "name");
+    const priceKey = findColumn(headers, "price");
+    const stockKey = findColumn(headers, "stock");
+    const statusKey = findColumn(headers, "status");
+    if (!nameKey) {
+      return { items: [], error: `未识别到商品名称列（表头：${headers.join("、") || "(无)"}）——请确认表格含「名称/商品」列` };
+    }
     const items = parsed.rows.map((r) => {
-      const keys = Object.keys(r);
-      const idKey = keys.find((k) => /^id$|编号|序号/i.test(k.trim()));
-      const nameKey = keys.find((k) => /名称|商品|name/i.test(k)) ?? keys[0];
-      const priceKey = keys.find((k) => /价格|单价|price/i.test(k));
-      const stockKey = keys.find((k) => /库存|数量|stock/i.test(k));
-      const statusKey = keys.find((k) => /状态|status/i.test(k));
       return {
         id: idKey ? cellNum(r[idKey]) : undefined,
         name: r[nameKey] || undefined,
@@ -261,6 +279,10 @@ async function tableDrivenBatch(token: string, shopId: number, state: GenericSta
   );
   if (error) return { status: "error", output: error, reason: "解析失败", data: {} };
   if (!items.length) return { status: "error", output: "表格里没有商品数据", reason: "空表格", data: {} };
+  // 表格驱动含创建语义：需要价格列（否则新建商品无价格）
+  if (!items.some((i) => i.price !== undefined)) {
+    return { status: "error", output: "表格未识别到价格列（表头需含：价格/单价/售价等）——请确认表格列", reason: "缺价格列", data: {} };
+  }
   const existing = await callBizApi<Product[]>("/api/products", "GET", token);
   const { success, failed } = await runBatchRows(token, shopId, items, existing, {
     restoreOnSale: false,  // 无文字：不强制恢复上架（状态列驱动）
@@ -508,6 +530,10 @@ const skill: Skill = {
           );
           if (error) {
             return { status: "error", output: error, reason: "解析失败", data: {} };
+          }
+          // 上架语义需要价格列：表格未识别到价格列 → 明确报错
+          if (!items.some((i) => i.price !== undefined)) {
+            return { status: "error", output: "表格未识别到价格列（表头需含：价格/单价/售价等）——批量上架需要价格", reason: "缺价格列", data: {} };
           }
           // 是否明确"上架"意图（决定已存在商品是否恢复上架；表格驱动调整时不强制改状态）
           const restoreOnSale = /上架|恢复|重新上架/.test(newText);

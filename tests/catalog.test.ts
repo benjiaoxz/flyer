@@ -581,6 +581,44 @@ describe("catalog 表格附件（table_text 一次打包）", () => {
     expect(products.find((p) => p.name === "调试鞋")?.price).toBe(199);
     expect(products.length).toBe(before + 1); // 表格新商品被创建
   });
+
+  it("陌生表头同义词（品名/售价/件数）→ 正确映射业务字段", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "品名,售价,件数\n同义词鞋A,120,30"; // 表头用同义词，不用 名称/价格/库存
+    const r = await skill.handle(
+      { user_text: "批量上架", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_add_batch", params: {} } as never,
+      "批量上架",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 1 条");
+    expect(products.find((p) => p.name === "同义词鞋A")?.price).toBe(120);
+    expect(products.find((p) => p.name === "同义词鞋A")?.stock).toBe(30);
+  });
+
+  it("无名称列 → 明确报错并列出表头", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "价格,库存\n100,10"; // 没有名称列
+    const r = await skill.handle(
+      { user_text: "批量上架", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_add_batch", params: {} } as never,
+      "批量上架",
+    );
+    expect(r.status).toBe("error");
+    expect(r.output).toContain("未识别到商品名称列");
+  });
+
+  it("无价格列（上架语义）→ 明确报错", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,库存\n调试鞋,10"; // 没有价格列
+    const r = await skill.handle(
+      { user_text: "批量上架", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_add_batch", params: {} } as never,
+      "批量上架",
+    );
+    expect(r.status).toBe("error");
+    expect(r.output).toContain("未识别到价格列");
+  });
 });
 
 describe("catalog 上传文件批量上架", () => {

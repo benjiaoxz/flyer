@@ -5,6 +5,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";
 
 import { config } from "./config.js";
+import { usage } from "./usage.js";
 import { logger } from "./log.js";
 import { SkillRegistry } from "./registry.js";
 import type { GenericState, IntentResult } from "../types/index.js";
@@ -51,6 +52,15 @@ export class IntentRecognizer {
           model: config.llmModel,
           apiKey: config.llmApiKey,
           configuration: { baseURL: config.llmBaseUrl },
+          callbacks: [{
+            handleLLMEnd: (output) => {
+              // 记录 LLM 调用 token（供用量统计与缓存成本估算）
+              const tu = (output as { llmOutput?: { tokenUsage?: { promptTokens?: number; completionTokens?: number } } }).llmOutput?.tokenUsage;
+              if (tu?.promptTokens) {
+                usage.record("-", "-", tu.promptTokens, tu.completionTokens ?? 0);
+              }
+            },
+          }],
         }).withStructuredOutput(IntentSchema, { method: "functionCalling" });
         const system = this.buildSystem(candidates, intentsDesc);
         const res = (await model.invoke([

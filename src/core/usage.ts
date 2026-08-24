@@ -96,3 +96,20 @@ class UsageStore {
 }
 
 export const usage = new UsageStore();
+
+/** 全局累计 total token（不限 skill，用于计算执行增量） */
+export function totalAllTokens(): number {
+  const skills = new Set<string>();
+  // memory 模式遍历所有
+  for (const thread of (usage as unknown as { memory: Map<string, Map<string, UsageAgg>> }).memory?.values() ?? []) {
+    for (const skillId of thread.keys()) skills.add(skillId);
+  }
+  let total = 0;
+  for (const s of skills) total += usage.skillUsage(s).total;
+  return total;
+}
+
+/** 读指定 thread+skill 的当前累计 total token（用于计算执行增量） */
+export function currentTotalTokens(thread: string, skill: string): number {
+  return usage.skillUsage(skill).total;
+}

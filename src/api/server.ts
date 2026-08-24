@@ -93,6 +93,7 @@ export function buildApi(agent: Agent) {
           skills: Object.fromEntries(
             agent.registry.list().map((s) => [s.manifest.id, usage.skillUsage(s.manifest.id)]),
           ),
+          global: usage.skillUsage("-"),  // 意图识别等全局 LLM 成本
         };
   });
 

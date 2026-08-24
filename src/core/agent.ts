@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 
 import { config } from "./config.js";
 import { getCache } from "./cache.js";
-import { usage } from "./usage.js";
+import { totalAllTokens, usage } from "./usage.js";
 import { IntentRecognizer } from "./intent.js";
 import { logger } from "./log.js";
 import { SkillRegistry } from "./registry.js";
@@ -104,13 +104,17 @@ export class Agent {
     const cached = await getCache().tryGet(s.user_text, manifest.id, config.cacheBusting);
     if (cached) {
       usage.recordCacheHit("-", manifest.id, cached.saved_tokens);
-      logger.info(`[缓存命中] 技能 ${manifest.id} 直接返回缓存结果（约省 ${cached.saved_tokens} tokens）`);
+      const agg = usage.skillUsage(manifest.id);
+      logger.info(
+        `[缓存命中] 技能 ${manifest.id} 直接返回缓存结果（本次省 ${cached.saved_tokens} tokens，累计命中 ${agg.cache_hits} 次，累计省 ${agg.saved_tokens} tokens）`,
+      );
       this.recordTaskStep(task, `execute:${manifest.id}`, "success", "cache_hit");
       return { output: String(cached.result), output_type: "text", last_skill: manifest.id, task };
     }
 
     // 执行技能（结果契约：SkillResult 校验；异常视为 error 不崩）
     this.recordTaskStep(task, `execute:${manifest.id}`, "running");
+    const tokensBefore = totalAllTokens();
     let updates: SkillResult;
     try {
       const raw = await skill.handle(s, { intent: s.intent, params: s.intent_params }, s.user_text);
@@ -158,7 +162,10 @@ export class Agent {
       this.recordOutcome("success", "execute", "", updates.output);
       this.recordTaskStep(task, `execute:${manifest.id}`, "success");
       if (updates.output) {
-        await getCache().save(s.user_text, updates.output, manifest.id, config.cacheBusting, 0);
+        // 缓存成本估算：本次执行消耗的 token（执行后累计 - 执行前基线）
+        const tokensAfter = totalAllTokens();
+        const savedTokens = Math.max(0, tokensAfter - tokensBefore);
+        await getCache().save(s.user_text, updates.output, manifest.id, config.cacheBusting, savedTokens);
       }
     }
     return {

@@ -134,7 +134,14 @@ const skill: Skill = {
         else if (newText.includes("查") || newText.includes("看")) action = "query";
         else action = "add";
       }
-      const product = parseProduct(newText, action);
+      // 字段来源：LLM params 优先（语义抽取），正则 parseProduct 兜底（无 LLM/漏抽时）
+      const regex = parseProduct(newText, action);
+      const p = intent.params ?? {};
+      const product = {
+        name: (p.name as string | undefined) ?? regex.name,
+        price: (p.price as number | undefined) ?? regex.price,
+        stock: (p.stock as number | undefined) ?? regex.stock,
+      };
 
       switch (action) {
         case "add": {

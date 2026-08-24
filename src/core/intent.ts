@@ -15,9 +15,19 @@ const BUILTIN_INTENTS: Record<string, string> = {
   fallback: "无法匹配任何技能的输入（闲聊、无关话题）",
 };
 
+// 通用业务字段抽取（技能无关，LLM 统一输出这些字段名）：
+// name=业务对象名（商品名/店铺名等）、price/stock/quantity=常见数值字段、
+// action_detail=补充动作描述（如"下架""恢复上架"）
 const IntentSchema = z.object({
   intent: z.string(),
-  params: z.record(z.string(), z.unknown()).default({}),
+  params: z.object({
+    name: z.string().optional(),
+    price: z.number().optional(),
+    stock: z.number().optional(),
+    quantity: z.number().optional(),
+    action_detail: z.string().optional(),
+    extra: z.record(z.string(), z.unknown()).optional(),
+  }).default({}),
   needs_input: z.boolean().optional(),
   questions: z.array(z.string()).optional(),
 });

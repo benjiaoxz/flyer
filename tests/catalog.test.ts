@@ -225,3 +225,16 @@ describe("catalog 单商品查询（查单个 vs 查全部）", () => {
     expect(r.output).toContain("未找到");
   });
 });
+
+describe("catalog LLM params 优先（字段语义抽取）", () => {
+  it("params 提供字段 → 正则未覆盖的说法也能解析", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const r = await skill.handle(
+      { user_text: "把调试鞋库存调低到60", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_update", params: { name: "调试鞋", stock: 60 } } as never,
+      "把调试鞋库存调低到60",
+    );
+    expect(r.status).toBe("success");
+    expect(products[1].stock).toBe(60);  // params 的 stock=60 生效（正则可能抓不到"调低到60"）
+  });
+});

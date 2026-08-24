@@ -70,7 +70,7 @@
 | **P0** | 结果契约：SkillResult（status 必填，success/error + reason），harness 强制校验，契约违规记 outcome(stage=contract) | ✅ 完成 |
 | **P1-a** | 指令声明层：技能完整对外契约 yaml 化（intent/描述/关键词/约束从 handlers.ts 抽出），意图识别 prompt 模板化（system 部分可配置） | ✅ 完成 |
 | **P1-b** | 任务状态模型：状态里定义"任务"一等公民（任务 id/步骤序列/当前步骤/每步成败），checkpointer 持久化 | ✅ 完成 |
-| P2 | 结果验证：技能执行后自证（如写操作后回读确认，按技能逐个加） | ⬜ 未开始 |
+| P2 | 结果验证：技能执行后自证（Skill.verify 机制，写操作后回读确认） | ✅ 完成 |
 | P3 | 执行目录（workspace）：core 机制（任务级透传/用户级解析/三层上下文）+ skill 语义（workspace 技能读 AGENTS.md） | ⬜ 未开始 |
 
 ### P0：结果契约（SkillResult）
@@ -87,6 +87,14 @@
 - [x] 示例技能迁移：manifest 声明移到 skill.yaml，handlers.ts 只实现 handle
 - [x] 意图识别 prompt 模板化：INTENT_SYSTEM_PROMPT 配置覆盖内置模板；候选技能 manifest.system_prompt 注入
 - [x] "仓库即规范"：外部业务方改技能 = 改 skill.yaml 声明 + handlers.ts 实现
+
+### P2：结果验证（技能执行后自证）
+
+- [x] Skill 接口新增可选 `verify(state, result, newText)`——执行后自证
+- [x] harness 强制：handle 成功后自动调 verify；未通过 → outcome(stage=verify) + failed_at=verify + **不存语义缓存**
+- [x] catalog 应用：上架/改价/下架后回读业务系统确认落库（字段一致性校验）
+- [x] 测试 +4（通过/不通过/异常/无 verify 不受影响），全量 33 tests 过
+- [x] 端到端：上架"验证鞋"399元 → verify 回读确认 ✅ 落库
 
 ### P1-b：任务状态模型
 

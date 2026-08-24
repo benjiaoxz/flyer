@@ -132,6 +132,28 @@ export class Agent {
       task.failed_at = "execute";
       this.recordTaskStep(task, `execute:${manifest.id}`, "error", updates.reason);
     } else {
+      // P2 结果验证：技能声明 verify 则执行后自证，未通过 → 按失败处理（不存缓存）
+      let verified = true;
+      if (skill.verify) {
+        try {
+          verified = await skill.verify(s, updates, s.user_text);
+        } catch (e) {
+          logger.warn(`[验证异常] ${manifest.id} verify 抛异常: ${String(e)}`);
+          verified = false;
+        }
+        if (!verified) {
+          this.recordOutcome("error", "verify", "执行后自证未通过", updates.output);
+          task.failed_at = "verify";
+          this.recordTaskStep(task, `execute:${manifest.id}`, "error", "verify_failed");
+          return {
+            output: `执行结果未通过验证：${updates.output}`,
+            output_type: "text",
+            last_skill: manifest.id,
+            task,
+          };
+        }
+        this.recordTaskStep(task, "verify", "success");
+      }
       this.recordOutcome("success", "execute", "", updates.output);
       this.recordTaskStep(task, `execute:${manifest.id}`, "success");
       if (updates.output) {

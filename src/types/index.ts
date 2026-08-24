@@ -42,6 +42,8 @@ export interface SkillManifest {
 export interface Skill {
   readonly manifest: SkillManifest;
   handle(state: GenericState, intent: IntentResult, newText: string): SkillResult;
+  /** 可选：执行后自证（P2 结果验证）。返回 false = 执行结果未通过验证（按失败处理） */
+  verify?(state: GenericState, result: SkillResult, newText: string): Promise<boolean> | boolean;
 }
 
 /** 意图识别结果 */

@@ -549,6 +549,38 @@ describe("catalog 表格附件（table_text 一次打包）", () => {
     expect(products.find((p) => p.name === "Nike 鞋")?.price).toBe(259); // 目标行被改
     expect(products.find((p) => p.name === "调试鞋")?.price).toBe(599); // 其他行不动
   });
+
+  it("表格带 id 列 → 按 id 定位，名称列变化 → 改名", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[0] = { id: 1, shop_id: 1, name: "Nike 鞋", price: 299, stock: 50, status: "on_sale" };
+    const csv = "id,名称,价格\n1,Nike Pro,259"; // id 1 = Nike 鞋，名称改为 Nike Pro
+    const r = await skill.handle(
+      { user_text: "", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_add_batch", params: {} } as never,
+      "",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 1 条");
+    expect(products[0].name).toBe("Nike Pro");  // 按 id 定位 → 名称变更生效
+    expect(products[0].price).toBe(259);
+    expect(products.length).toBe(2); // 不创建新商品（id 定位到已有）
+  });
+
+  it("描述与表格无关联 → 分别处理：描述改价 + 表格驱动", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\n新表鞋X,88";
+    const before = products.length;
+    const r = await skill.handle(
+      { user_text: "把调试鞋价格改为199", table_text: csv, user_ctx: ctx } as never,
+      { intent: "catalog_update", params: { name: "调试鞋", price: 199 } } as never,
+      "把调试鞋价格改为199",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("已更新「调试鞋」");   // 描述部分执行
+    expect(r.output).toContain("表格处理：成功 1 条"); // 表格部分独立处理
+    expect(products.find((p) => p.name === "调试鞋")?.price).toBe(199);
+    expect(products.length).toBe(before + 1); // 表格新商品被创建
+  });
 });
 
 describe("catalog 上传文件批量上架", () => {

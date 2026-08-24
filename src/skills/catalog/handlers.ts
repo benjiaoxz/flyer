@@ -134,7 +134,7 @@ async function parseBatchItems(
   newText: string,
   tableText: string,
   userId: string,
-): Promise<{ items: Array<{ name?: string; price?: number; stock?: number; status?: string }>; error?: string }> {
+): Promise<{ items: BatchItem[]; error?: string }> {
   const { parseCsvText, parseExcelFile } = await import("../../tools/excel.js");
   try {
     let parsed: Awaited<ReturnType<typeof parseCsvText>>;
@@ -155,11 +155,13 @@ async function parseBatchItems(
     if (!parsed.rows.length) return { items: [], error: "未解析到商品数据（需要表格：名称,价格,库存 每行一个）" };
     const items = parsed.rows.map((r) => {
       const keys = Object.keys(r);
+      const idKey = keys.find((k) => /^id$|编号|序号/i.test(k.trim()));
       const nameKey = keys.find((k) => /名称|商品|name/i.test(k)) ?? keys[0];
       const priceKey = keys.find((k) => /价格|单价|price/i.test(k));
       const stockKey = keys.find((k) => /库存|数量|stock/i.test(k));
       const statusKey = keys.find((k) => /状态|status/i.test(k));
       return {
+        id: idKey ? cellNum(r[idKey]) : undefined,
         name: r[nameKey] || undefined,
         price: priceKey ? cellNum(r[priceKey]) : undefined,
         stock: stockKey ? cellNum(r[stockKey]) : undefined,
@@ -184,6 +186,106 @@ function applyNameScope(
     .filter((i) => i.name !== paramsName)
     .map((i) => ({ name: i.name ?? "(无名)", reason: `描述指定了「${paramsName}」，跳过` }));
   return { kept, skipped };
+}
+
+/** 表格行 → 业务商品：优先 id（唯一标识，名称可能已变），退而求其次名称（精确→includes） */
+function findTarget(products: Product[], item: BatchItem): Product | undefined {
+  if (item.id !== undefined) return products.find((p) => p.id === item.id);
+  if (!item.name) return undefined;
+  return products.find((p) => p.name === item.name)
+    ?? products.find((p) => item.name && p.name.includes(item.name));
+}
+
+/** 表格名称列与系统名称不一致（id 定位到同一商品）→ 以表格名称为准（改名） */
+function applyTableNamePatch(patch: Record<string, unknown>, target: Product, item: BatchItem): void {
+  if (item.name && target.name !== item.name) patch.name = item.name;
+}
+
+/** 逐行处理批量数据（add_batch / 表格驱动独立处理共用）：
+ * 存在 → 更新表格列（价格/库存/状态/名称）；不存在 → 按 createMissing 创建或报错 */
+async function runBatchRows(
+  token: string,
+  shopId: number,
+  items: BatchItem[],
+  existing: Product[],
+  opts: { restoreOnSale: boolean; createMissing: boolean; filters?: RowFilters },
+): Promise<{ success: string[]; failed: Array<{ name: string; reason: string }> }> {
+  const success: string[] = [];
+  const failed: Array<{ name: string; reason: string }> = [];
+  for (const item of items) {
+    if (!item.name || item.price === undefined) {
+      failed.push({ name: item.name ?? "(无名)", reason: "缺名称或价格" });
+      continue;
+    }
+    try {
+      const target = findTarget(existing, item);
+      if (opts.filters?.status && target && target.status !== opts.filters.status) {
+        failed.push({ name: item.name, reason: `跳过: 状态${target.status}不符合条件${opts.filters.status}` });
+        continue;
+      }
+      if (target) {
+        const patch: Record<string, unknown> = {};
+        if (item.price !== undefined) patch.price = item.price;
+        if (item.stock !== undefined) patch.stock = item.stock;
+        applyTableNamePatch(patch, target, item);
+        if (item.status === "on_sale") patch.status = "on_sale";
+        else if (item.status === "off_sale") patch.status = "off_sale";
+        else if (opts.restoreOnSale) patch.status = "on_sale";
+        await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token, patch);
+        success.push(item.name);
+      } else if (opts.createMissing) {
+        await callBizApi<Product>("/api/products", "POST", token,
+          { shop_id: shopId, name: item.name, price: item.price, stock: item.stock ?? 0, status: item.status === "off_sale" ? "off_sale" : "on_sale" });
+        success.push(item.name);
+      } else {
+        failed.push({ name: item.name, reason: "未找到该商品" });
+      }
+    } catch (e) {
+      failed.push({ name: item.name, reason: (e as Error).message });
+    }
+  }
+  return { success, failed };
+}
+
+/** 描述是否引用表格：有关联 → 合并处理；无关联 → 描述独立执行 + 表格独立处理 */
+function tableReferenced(text: string): boolean {
+  return /表格|文件|excel|xlsx|csv|根据.*(表|文件)/i.test(text);
+}
+
+/** 表格独立处理（描述与表格无关联时）：表格驱动，存在更新（含改名）、不存在创建 */
+async function tableDrivenBatch(token: string, shopId: number, state: GenericState): Promise<SkillResult> {
+  const { items, error } = await parseBatchItems(
+    state.user_text || "",
+    state.table_text || "",
+    String(state.user_ctx?.user_id ?? ""),
+  );
+  if (error) return { status: "error", output: error, reason: "解析失败", data: {} };
+  if (!items.length) return { status: "error", output: "表格里没有商品数据", reason: "空表格", data: {} };
+  const existing = await callBizApi<Product[]>("/api/products", "GET", token);
+  const { success, failed } = await runBatchRows(token, shopId, items, existing, {
+    restoreOnSale: false,  // 无文字：不强制恢复上架（状态列驱动）
+    createMissing: true,   // 表格驱动：不存在创建
+  });
+  const skippedRows = failed.filter((f) => f.reason.startsWith("跳过:"));
+  const realFailed = failed.filter((f) => !f.reason.startsWith("跳过:"));
+  return {
+    status: realFailed.length ? "error" : "success",
+    output: `📊 表格处理：成功 ${success.length} 条${skippedRows.length ? `，跳过 ${skippedRows.length} 条（${skippedRows.map((f) => `${f.name}:${f.reason.slice("跳过: ".length)}`).join("；")}）` : ""}${realFailed.length ? `，失败 ${realFailed.length} 条（${realFailed.map((f) => `${f.name}:${f.reason}`).join("；")}）` : ""}`,
+    reason: realFailed.length ? `部分失败: ${realFailed.map((f) => f.name).join("、")}` : "",
+    data: { success_count: success.length, failed_count: realFailed.length, skipped_count: skippedRows.length },
+  };
+}
+
+/** 描述与表格无关联 → 分别处理：描述结果 + 表格独立处理结果合并汇报 */
+async function mergeWithTable(result: SkillResult, state: GenericState, token: string, shopId: number): Promise<SkillResult> {
+  if (!state.table_text || tableReferenced(state.user_text)) return result;
+  const tableResult = await tableDrivenBatch(token, shopId, state);
+  return {
+    status: result.status === "error" || tableResult.status === "error" ? "error" : "success",
+    output: [result.output, tableResult.output].filter(Boolean).join("\n"),
+    reason: [result.reason, tableResult.reason].filter(Boolean).join("；"),
+    data: { ...(result.data ?? {}), ...(tableResult.data ?? {}) },
+  };
 }
 
 /** 批量更新商品（"用刚才的表格批量调整价格/库存/改名"）：
@@ -253,9 +355,8 @@ async function batchUpdateProducts(
       failed.push({ name: item.name, reason: "该行没有价格/库存更新列" });
       continue;
     }
-    // 按名称定位商品：精确匹配优先，退而求其次 includes（避免"调试鞋"误匹配"调试鞋2"）
-    const target = products.find((p) => p.name === item.name)
-      ?? products.find((p) => item.name && p.name.includes(item.name));
+    // 定位商品：优先 id（唯一标识），退而求其次名称（精确→includes）
+    const target = findTarget(products, item);
     if (!target) {
       failed.push({ name: item.name, reason: "未找到该商品" });
       continue;
@@ -265,6 +366,7 @@ async function batchUpdateProducts(
       continue;
     }
     try {
+      applyTableNamePatch(patch, target, item); // id 定位 + 名称列变化 → 改名
       await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token, patch);
       success.push(item.name);
     } catch (e) {
@@ -293,8 +395,9 @@ interface RowFilters {
   expected_count?: number;
 }
 
-/** 批量数据行（解析自表格：名称/价格/库存/状态列） */
+/** 批量数据行（解析自表格：id/名称/价格/库存/状态列） */
 interface BatchItem {
+  id?: number;
   name?: string;
   price?: number;
   stock?: number;
@@ -428,38 +531,13 @@ const skill: Skill = {
             return { status: "error", output: `没有符合条件的商品行（${skipped.length} 行被条件过滤）`, reason: "无符合行", data: { skipped_count: skipped.length } };
           }
           // 逐条上架（复用 add 逻辑，同名恢复/创建）
-          const success: string[] = [];
           const existing = await callBizApi<Product[]>("/api/products", "GET", token);
-          for (const item of kept) {
-            if (!item.name || item.price === undefined) {
-              failed.push({ name: item.name ?? "(无名)", reason: "缺名称或价格" });
-              continue;
-            }
-            try {
-              const target = existing.find((x) => x.name === item.name);
-              if (filters?.status && target && target.status !== filters.status) {
-                failed.push({ name: item.name, reason: `跳过: 状态${target.status}不符合条件${filters.status}` });
-                continue;
-              }
-              if (target) {
-                // 已存在：更新表格列；状态列（行级，优先）或明确"上架"驱动状态变更
-                const patch: Record<string, unknown> = {};
-                if (item.price !== undefined) patch.price = item.price;
-                if (item.stock !== undefined) patch.stock = item.stock;
-                if (item.status === "on_sale") patch.status = "on_sale";
-                else if (item.status === "off_sale") patch.status = "off_sale";
-                else if (restoreOnSale) patch.status = "on_sale";
-                await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token, patch);
-                success.push(item.name);
-              } else {
-                await callBizApi<Product>("/api/products", "POST", token,
-                  { shop_id: shopId, name: item.name, price: item.price, stock: item.stock ?? 0, status: item.status === "off_sale" ? "off_sale" : "on_sale" });
-                success.push(item.name);
-              }
-            } catch (e) {
-              failed.push({ name: item.name, reason: (e as Error).message });
-            }
-          }
+          const { success, failed: batchFailed } = await runBatchRows(token, shopId, kept, existing, {
+            restoreOnSale,
+            createMissing: true,
+            filters,
+          });
+          failed.push(...batchFailed);
           // 跳过（条件过滤）≠ 失败：只按真失败定 status
           const skippedRows = failed.filter((f) => f.reason.startsWith("跳过:"));
           const realFailed = failed.filter((f) => !f.reason.startsWith("跳过:"));
@@ -472,12 +550,12 @@ const skill: Skill = {
         }
         case "add": {
           if (!product.name) {
-            return {
+            return await mergeWithTable({
               status: "error",
               output: "上架需要商品名（如：上架\"Nike 鞋\" 299元 库存50）",
               reason: "缺少商品名",
               data: {},
-            };
+            }, state, token, shopId);
           }
           // 上架语义：同名商品已存在（如之前下架的）→ 恢复上架状态；不存在 → 创建新商品
           const existing = await callBizApi<Product[]>("/api/products", "GET", token);
@@ -489,19 +567,19 @@ const skill: Skill = {
               token,
               { status: "on_sale", ...(product.price ? { price: product.price } : {}), ...(product.stock !== undefined ? { stock: product.stock } : {}) },
             );
-            return {
+            return await mergeWithTable({
               status: "success",
               output: `✅ 已上架商品：${restored.name}（${restored.price}元，库存${restored.stock}，id=${restored.id}）`,
               data: { product_id: restored.id },
-            };
+            }, state, token, shopId);
           }
           if (!product.price) {
-            return {
+            return await mergeWithTable({
               status: "error",
               output: "新商品上架需要价格（如：上架\"Nike 鞋\" 299元 库存50）",
               reason: "缺少商品价格",
               data: {},
-            };
+            }, state, token, shopId);
           }
           const created = await callBizApi<Product>(
             "/api/products",
@@ -509,39 +587,48 @@ const skill: Skill = {
             token,
             { shop_id: shopId, name: product.name, price: product.price, stock: product.stock ?? 0, status: "on_sale" },
           );
-          return {
+          return await mergeWithTable({
             status: "success",
             output: `✅ 已上架商品：${created.name}（${created.price}元，库存${created.stock}，id=${created.id}）`,
             data: { product_id: created.id },
-          };
+          }, state, token, shopId);
         }
         case "query": {
           const products = await callBizApi<Product[]>("/api/products", "GET", token);
           if (!products.length) {
-            return { status: "success", output: "暂无商品", data: {} };
+            return await mergeWithTable({ status: "success", output: "暂无商品", data: {} }, state, token, shopId);
           }
           // 指定了商品名 → 查单个商品；否则查全部
           if (product.name) {
             const target = products.find((p) => p.name === product.name)
               ?? products.find((p) => p.name.includes(product.name!));
             if (!target) {
-              return { status: "error", output: `未找到商品「${product.name}」`, reason: "商品不存在", data: {} };
+              return await mergeWithTable({
+                status: "error",
+                output: `未找到商品「${product.name}」`,
+                reason: "商品不存在",
+                data: {},
+              }, state, token, shopId);
             }
-            return {
+            return await mergeWithTable({
               status: "success",
               output: `📦 ${target.name}：${target.price}元，库存${target.stock}，状态${target.status}（id=${target.id}）`,
               data: { product_id: target.id },
-            };
+            }, state, token, shopId);
           }
           const lines = products.map(
             (p) => `${p.name}（${p.price}元，库存${p.stock}，${p.status}）`,
           );
-          return { status: "success", output: `📦 商品列表：\n${lines.join("\n")}`, data: { count: products.length } };
+          return await mergeWithTable({
+            status: "success",
+            output: `📦 商品列表：\n${lines.join("\n")}`,
+            data: { count: products.length },
+          }, state, token, shopId);
         }
         case "update": {
-          // 批量更新（"用刚才的表格批量调整价格/库存"）→ 读上传文件逐条改；
-          // 有表格附件（state.table_text）即按批量处理（网关一次打包场景）
-          const isBatchUpdate = Boolean(state.table_text)
+          // 批量更新：描述引用表格（"根据表格调整"）或含批量词；
+          // 有表格附件但描述与表格无关（"把调试鞋价格改为199"+表格）→ 单条 + 表格独立处理
+          const isBatchUpdate = (Boolean(state.table_text) && tableReferenced(newText))
             || (intent.params?.action_detail as string | undefined)?.includes("批量")
             || /批量|表格|文件|excel|xlsx|上传/i.test(newText);
           if (isBatchUpdate) {
@@ -550,19 +637,24 @@ const skill: Skill = {
           // 支持改名/改价/改库存任意组合；至少有一个更新目标才执行
           const hasUpdate = product.new_name !== undefined || product.price !== undefined || product.stock !== undefined;
           if (!product.name || !hasUpdate) {
-            return {
+            return await mergeWithTable({
               status: "error",
               output: "修改需要指定商品名和要改的内容（如：改\"Nike 鞋\"价格 259元 / 名称改为X / 库存改N）",
               reason: "缺少商品名或更新内容",
               data: {},
-            };
+            }, state, token, shopId);
           }
           const products = await callBizApi<Product[]>("/api/products", "GET", token);
           // 名称精确匹配优先，退而求其次 includes（避免"调试鞋"误匹配"调试鞋2"）
           const target = products.find((p) => p.name === product.name)
             ?? products.find((p) => p.name.includes(product.name!));
           if (!target) {
-            return { status: "error", output: `未找到商品「${product.name}」`, reason: "商品不存在", data: {} };
+            return await mergeWithTable({
+              status: "error",
+              output: `未找到商品「${product.name}」`,
+              reason: "商品不存在",
+              data: {},
+            }, state, token, shopId);
           }
           // 部分更新：只传用户指定的字段（改名/改价/改库存任意组合）
           const patch: Record<string, unknown> = { status: "on_sale" };
@@ -575,20 +667,30 @@ const skill: Skill = {
             token,
             patch,
           );
-          return {
+          return await mergeWithTable({
             status: "success",
             output: `✏️ 已更新「${updated.name}」：${updated.price}元，库存${updated.stock}`,
             data: { product_id: updated.id },
-          };
+          }, state, token, shopId);
         }
         case "off": {
           if (!product.name) {
-            return { status: "error", output: "下架需要商品名（如：下架\"Nike 鞋\"）", reason: "缺少商品名", data: {} };
+            return await mergeWithTable({
+              status: "error",
+              output: "下架需要商品名（如：下架\"Nike 鞋\"）",
+              reason: "缺少商品名",
+              data: {},
+            }, state, token, shopId);
           }
           const products = await callBizApi<Product[]>("/api/products", "GET", token);
           const target = products.find((p) => p.name.includes(product.name!));
           if (!target) {
-            return { status: "error", output: `未找到商品「${product.name}」`, reason: "商品不存在", data: {} };
+            return await mergeWithTable({
+              status: "error",
+              output: `未找到商品「${product.name}」`,
+              reason: "商品不存在",
+              data: {},
+            }, state, token, shopId);
           }
           const updated = await callBizApi<Product>(
             `/api/products/${target.id}`,
@@ -596,7 +698,11 @@ const skill: Skill = {
             token,
             { status: "off_sale" },
           );
-          return { status: "success", output: `🛑 已下架「${updated.name}」`, data: { product_id: updated.id } };
+          return await mergeWithTable({
+            status: "success",
+            output: `🛑 已下架「${updated.name}」`,
+            data: { product_id: updated.id },
+          }, state, token, shopId);
         }
         default:
           return { status: "error", output: `未知操作: ${action}`, reason: "未知意图", data: {} };

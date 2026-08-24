@@ -21,40 +21,40 @@
 ## M3：资源边界（token 治理，按 P0→P3 推进）
 
 ### P0 用量记录升级 + max_tokens（改动小，先行）
-- [x] 用量收集雏形（`core/llm.py` UsageCollector：全局累计）——已具备
-- [x] 升级为**按会话（thread_id）+ 技能（manifest.id）**拆分（core/usage.py）
+- [x] 用量收集雏形（LLM 调用收集：全局累计）——已具备
+- [x] 升级为**按会话（thread_id）+ 技能（manifest.id）**拆分（src/core/usage.ts）
 - [x] **持久化**：每次调用落 JSON 日志事件（usage_event：thread/技能/输入输出 token）
-- [x] `max_tokens` 单次输出上限（2048，core/llm.py）
+- [x] LLM 输出上限（保险丝防超长回复）
 
 ### P1 语义缓存 + 会话级配额（框架价值大）
-- [x] **语义缓存**（`core/cache.py` + `core/embedding.py`）：可插拔 embedding（ollama/cloud），命中跳过 LLM，busting 失效
+- [x] **语义缓存**（src/core/cache.ts + src/core/embedding.ts）：可插拔 embedding（ollama/cloud），命中跳过 LLM，busting 失效
 - [x] **向量存储可插拔**（`VECTOR_STORE`）：memory（默认）/ sqlite（落盘，跨进程/重启保留）/ pgvector（生产预留）
-- [x] **会话配额**（`core/limits.py`）：轮数上限 + token 预算，超限强制拒绝/告警
+- [x] **会话配额**：轮数上限 + token 预算，超限强制拒绝/告警
 
 ### P2 技能资源策略（机制入框架）
 - [x] manifest 增加：`session_mode`/`max_llm_calls_per_turn`/`data_scopes`/`tools`/`requires_confirmation`
 - [x] core 按 manifest 校验：轮数/预算/白名单/闸门（dispatch 拦截器）
-- [x] 补充：single 模式意图识别不喂历史（core/intent.py `_last_skill_is_single`）；每轮 LLM 调用数计数接入 dispatch（core/agent.py）
+- [x] 补充：single 模式意图识别不喂历史（src/core/intent.ts）；每轮 LLM 调用数计数接入 dispatch（src/core/agent.ts）
 - [ ] 业务技能外部提供（Skill 插件机制已就绪，业务技能按需开发/引入）
 
 ### P3 预留接口（等痛点出现）
-- [ ] `core/context.py` 预留：历史摘要接口、向量检索接口
+- [ ] 历史摘要/向量检索接口预留
 - [ ] 触发条件：滑动窗口丢早期信息成为真实体验问题
 
 ### P4 意图预筛增强（trigger_keywords 粗筛已落地，以下等技能量起来再做）
-- [ ] **embedding 召回**：关键词覆盖不到的语义说法（如"帮我记一下周三下午三点"），复用 `core/cache.py` 的 embedding 通道（ollama/cloud）做相似度召回——粗筛零命中时按相似度取 top-k，避免误伤 fallback
+- [ ] **embedding 召回**：关键词覆盖不到的语义说法（如"帮我记一下周三下午三点"），复用 `src/core/cache.ts` 的 embedding 通道（ollama/cloud）做相似度召回——粗筛零命中时按相似度取 top-k，避免误伤 fallback
 - [ ] **真实 LLM 验证**：技能多起来后在真实模型下评测候选注入准确率（命中率 / 意图选择是否被稀释 / 零候选误伤率），据结果调关键词与 top-k 策略
 
 ---
 
 ## M4：安全边界（权限，与 M3 合为 SkillBoundary）
 
-- [x] **API 鉴权**：Bearer API Key（`AUTH_MODE=api_key`，`core/security.py`）
+- [x] **API 鉴权**：Bearer API Key / JWT 断言（`AUTH_MODE=api_key/jwt`，src/core/security.ts）
 - [x] **限流**：按调用方身份内存滑窗（`RATE_LIMIT_PER_MINUTE`，多副本可升级 Redis/PG）
 - [x] **数据/工具白名单**：`data_scopes`/`tools` 已实现，工具/数据层运行时拦截
 - [x] **高危操作闸门**：`requires_confirmation` + `confirmation_after`，interrupt 确认（已实现）
-- [x] **边界校验告警**：校验失败 = 日志 + 告警（limits.py enforce）
-- [x] **用户隔离**：用户上下文（core/user.py）按用户裁剪技能/数据域（USER_PROVIDER=db）
+- [x] **边界校验告警**：校验失败 = 日志 + 告警
+- [x] **用户隔离**：用户上下文（JWT 断言）按用户裁剪技能/数据域
 - [x] **审计报表**：`GET /api/usage` 按技能/会话汇总用量（拦截记录有日志告警）
 - [ ] 用户体系/角色：**归业务方**，框架只留接入点（user_id 透传已有）
 
@@ -68,14 +68,14 @@
 | 优先级 | 内容 | 状态 |
 |---|---|---|
 | **P0** | 结果契约：SkillResult（status 必填，success/error + reason），harness 强制校验，契约违规记 outcome(stage=contract) | ✅ 完成 |
-| **P1-a** | 指令声明层：技能完整对外契约 yaml 化（intent/描述/关键词/约束从 handlers.py 抽出），意图识别 prompt 模板化（system 部分可配置） | ✅ 完成 |
+| **P1-a** | 指令声明层：技能完整对外契约 yaml 化（intent/描述/关键词/约束从 handlers.ts 抽出），意图识别 prompt 模板化（system 部分可配置） | ✅ 完成 |
 | **P1-b** | 任务状态模型：状态里定义"任务"一等公民（任务 id/步骤序列/当前步骤/每步成败），checkpointer 持久化 | ✅ 完成 |
 | P2 | 结果验证：技能执行后自证（如写操作后回读确认，按技能逐个加） | ⬜ 未开始 |
 | P3 | 执行目录（workspace）：core 机制（任务级透传/用户级解析/三层上下文）+ skill 语义（workspace 技能读 AGENTS.md） | ⬜ 未开始 |
 
 ### P0：结果契约（SkillResult）
 
-- [x] core/types.py：SkillResult（status: Literal[success,error] 必填 / output / reason / data / output_type）
+- [x] src/types/index.ts：SkillResult（status 必填 success/error / output / reason / data）
 - [x] agent：handle 返回归一化校验（SkillResult/dict 归一化）；status 必填且 ∈{success,error}；error 必填 reason；契约违规 → outcome(stage=contract) + 不存缓存
 - [x] 示例技能 + 测试技能全部显式改造为 SkillResult
 - [x] 测试：契约违规路径（缺 status/非法 status/缺 reason/非 dict）全量通过
@@ -84,9 +84,9 @@
 
 - [x] skill.yaml 扩展 manifest 段 = 技能完整契约（name/intents/trigger_keywords/边界/system_prompt）
 - [x] Skill 基类 manifest 来源：显式传入 > 类属性 > skill.yaml（模块路径推断技能 id）
-- [x] 示例技能迁移：manifest 声明移到 yaml，handlers.py 只实现 handle
+- [x] 示例技能迁移：manifest 声明移到 skill.yaml，handlers.ts 只实现 handle
 - [x] 意图识别 prompt 模板化：INTENT_SYSTEM_PROMPT 配置覆盖内置模板；候选技能 manifest.system_prompt 注入
-- [x] "仓库即规范"：外部业务方改技能 = 改 skill.yaml 声明 + handlers.py 实现
+- [x] "仓库即规范"：外部业务方改技能 = 改 skill.yaml 声明 + handlers.ts 实现
 
 ### P1-b：任务状态模型
 
@@ -105,7 +105,7 @@
 
 #### core 层（机制，所有 skill 可用）
 - [ ] **任务级目录透传**：/api/chat 或 state 增加目录字段，透传给 skill（skill 不用则无感）
-- [ ] **用户级目录解析**：用户档案存储（存用户默认工作目录）+ 按 user_id 解析（复用 user.py 身份体系）
+- [ ] **用户级目录解析**：用户档案存储（存用户默认工作目录）+ 按 user_id 解析
 - [ ] **三层上下文机制**：请求级 / 会话级 / 用户级 的目录解析（按"具体优先"覆盖：请求 > 会话 > 用户）
 - [ ] 目录进 ALLOWED_DIRS（安全边界，防越权——机制现成）
 
@@ -120,8 +120,8 @@
 ### P0-pre：JWT 鉴权体系（嵌入业务的地基，两端）
 
 - [ ] flyer 侧：`core/security.verify_jwt()`（RS256 验签/过期/kid）；`AUTH_MODE=jwt`
-- [ ] flyer 侧：`core/user.USER_PROVIDER=jwt`（从 payload 构造 UserContext）
-- [ ] flyer 侧：api.py authorize 升级（token → UserContext）；报表按 token 归属隔离
+- [ ] flyer 侧：JWT 用户上下文（从 payload 构造 UserContext）
+- [ ] flyer 侧：API authorize 升级（token → UserContext）；报表按 token 归属隔离
 - [ ] 业务系统侧：JWT 签发（RS256 私钥）+ /api/jwks 公钥发布 + 密钥轮换
 - [ ] 闭环：用户登录业务系统 → 调 flyer（带 JWT）→ 技能调业务系统 API（业务 Key + 透传 JWT）→ 回读验证
 
@@ -134,7 +134,7 @@
 | 子 Agent/子图 | 技能内部分工需并行/独立循环 | 技能内部建 LangGraph 子图（core 零改动） |
 | PgVectorStore（pgvector） | 多副本/集群，需共享缓存（sqlite 单机够用） | 实现同接口类，`VECTOR_STORE=pgvector` 切换；复用业务 Postgres |
 | 跨会话长期记忆 | 需要用户画像/全局知识 | LangGraph Store（InMemory→Postgres），`compile(store=)` |
-| 历史摘要/向量 | 窗口丢信息成痛点 | `core/context.py` 预留接口 |
+| 历史摘要/向量 | 窗口丢信息成痛点 | 预留接口 |
 
 ---
 

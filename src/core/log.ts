@@ -1,4 +1,4 @@
-/** JSON 日志（对齐 Python 版 core/log.py） */
+/** JSON 日志（） */
 export function log(
   level: "info" | "warn" | "error",
   msg: string,

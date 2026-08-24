@@ -1,4 +1,4 @@
-/** embedding 层：ollama/cloud 可插拔（对齐 Python 版 core/embedding.py） */
+/** embedding 层：ollama/cloud 可插拔（） */
 import { config } from "./config.js";
 import { logger } from "./log.js";
 

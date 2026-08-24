@@ -1,4 +1,4 @@
-/** 语义缓存：重复/相似问题命中直接返回（对齐 Python 版 core/cache.py）
+/** 语义缓存：重复/相似问题命中直接返回（）
  * 向量存储可插拔：memory（进程内）/ sqlite（落盘）
  */
 import Database from "better-sqlite3";

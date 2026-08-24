@@ -1,5 +1,5 @@
 /** JWT 用户身份断言验证（jose，RS256）
- * 对齐 Python 版 core/security.verify_jwt
+ * JWT 断言验证（jose RS256）
  */
 import { importSPKI, jwtVerify } from "jose";
 

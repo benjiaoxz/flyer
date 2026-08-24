@@ -1,5 +1,5 @@
 /** API 服务（Fastify）：/health /api/chat /api/resume /api/usage /api/failures
- * 对齐 Python 版 api.py
+ * 
  */
 import Fastify from "fastify";
 import { z } from "zod";

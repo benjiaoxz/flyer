@@ -1,7 +1,7 @@
 # API 对接文档（前端/外部服务用）
 
 > 供前端项目对接 Flyer 通用对话框架。Base URL：`http://localhost:8000`
-> 完整契约以代码为准（`api.py`），本文给出对接必需信息。
+> 完整契约以代码为准（src/api/server.ts），本文给出对接必需信息。
 
 ## 1. 接口总览
 
@@ -118,6 +118,6 @@ curl -X POST http://localhost:8000/api/chat \
 ## 6. 运行方式
 
 ```bash
-uv run uvicorn api:app --port 8000 --reload
-# Docker：docker compose up --build
+npm run api        # tsx 启动（默认 8099）
+npm test           # vitest
 ```

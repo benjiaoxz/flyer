@@ -1,4 +1,4 @@
-/** 用量记录（对齐 Python 版 core/usage.py）：token 记账 + 缓存命中审计 */
+/** 用量记录：token 记账 + 缓存命中审计 */
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";

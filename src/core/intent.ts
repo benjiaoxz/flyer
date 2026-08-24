@@ -1,5 +1,5 @@
 /** 意图识别：预筛（trigger_keywords）→ LLM 结构化输出 → 规则兜底
- * 对齐 Python 版 core/intent.py
+ * 
  */
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod";

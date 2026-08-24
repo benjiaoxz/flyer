@@ -1,4 +1,4 @@
-/** 技能注册表（对齐 Python 版 core/registry.py） */
+/** 技能注册表（） */
 import type { Skill, SkillManifest } from "../types/index.js";
 import { logger } from "./log.js";
 

@@ -1,4 +1,4 @@
-/** 配置（.env 读取，对齐 Python 版 core/config.py） */
+/** 配置（.env 读取，） */
 import "dotenv/config";
 
 export interface Config {

@@ -1,4 +1,4 @@
-/** flyer 核心类型（TS 版，对齐 Python 版设计） */
+/** flyer 核心类型 */
 import { z } from "zod";
 
 /** 技能返回的唯一合法形态（结果契约，harness 强制校验） */

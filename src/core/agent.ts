@@ -1,5 +1,5 @@
 /** 对话 Agent 主流程（LangGraph JS 三节点：intent → dispatch → remember）
- * 对齐 Python 版 core/agent.py
+ * 
  */
 import { Annotation, Command, END, StateGraph, interrupt } from "@langchain/langgraph";
 import { MemorySaver } from "@langchain/langgraph-checkpoint";

@@ -124,7 +124,7 @@ sequenceDiagram
 
 ### 原则 C：状态存储（崩溃恢复）
 - `CHECKPOINTER=memory|sqlite`（sqlite 落盘，重启可恢复）
-- 生产多副本换 PostgresSaver（改 `core/memory.py` 一处）
+- 生产多副本换 PostgresSaver（checkpointer 一处替换）
 
 ### 原则 D：可观测性
 - JSON 日志 + request_id 贯穿；LLM 调用日志（fn/耗时/token）；降级告警 + 通知器
@@ -148,7 +148,7 @@ sequenceDiagram
 
 ### 6.2 用量记录（core 职责，度量层）
 - **必须**：度量是控制的前提
-- **已实现（core/usage.py）**：
+- **已实现（src/core/usage.ts）**：
   - 粒度：按 **会话（thread_id）** + **技能（manifest.id）** 拆分 ✅
   - 存储：`USAGE_STORE=memory|sqlite`（sqlite 落盘 usage_events 表，重启保留，可聚合查询）✅
   - 出口：每次调用落 JSON 日志事件（usage_event：thread/技能/输入输出 token）✅
@@ -205,11 +205,11 @@ P3（⬜ 预留）：摘要/向量检索接口（等"窗口丢信息"成真实�
 
 ### 7.2 Manifest 扩展设计
 
-```python
-class SkillManifest(BaseModel):
-    # ---- 现有（能力声明）----
-    id: str
-    name: str
+```ts
+interface SkillManifest {
+  // ---- 能力声明 ----
+  id: string;
+  name: string;
     description: str
     intents: list[str]
 
@@ -252,10 +252,10 @@ class SkillManifest(BaseModel):
 
 ### 7.4 示例声明
 
-```python
-# 技能声明边界示例（业务技能外部提供，框架按此强制）
-SkillManifest(
-    id="any_business_skill", name="业务技能", description="职责说明",
+```ts
+// 技能声明边界示例（业务技能外部提供，框架按此强制）
+const manifest: SkillManifest = {
+  id: "any_business_skill", name: "业务技能", description: "职责说明",
     intents=["..."],
     session_mode="single|multi",      # 会话形态（资源维度）
     max_turns_per_session=..., max_llm_calls_per_turn=...,
@@ -269,11 +269,11 @@ SkillManifest(
 
 | 边界维度 | 挂载点 | 现有基础 |
 |---|---|---|
-| 会话/轮数/预算 | `core/limits.py`（规划） | dispatch/remember 节点处 |
-| LLM 调用数 | `core/llm.py` UsageCollector | 已收集调用数，加配额校验即可 |
-| 数据/工具白名单 | `core/registry.py` + 工具层 | manifest 已有 intents（能力白名单雏形） |
+| 会话/轮数/预算 | 配额校验 | dispatch/remember 节点处 |
+| LLM 调用数 | LLM 调用收集 | 已收集调用数，加配额校验即可 |
+| 数据/工具白名单 | src/core/registry.ts + 工具层 | manifest 已有 intents（能力白名单雏形） |
 | 操作闸门 | 技能内部 interrupt | **已实现**（clarify/approve） |
-| 用量记录 | `core/usage.py`（memory/sqlite + JSON 日志事件） | ✅ 已实现 |
+| 用量记录 | src/core/usage.ts（memory/sqlite + JSON 日志事件） | ✅ 已实现 |
 | 审计报表 | `GET /api/usage`（按技能/会话汇总） | ✅ 已实现 |
 
 ### 7.6 落地路径
@@ -294,9 +294,9 @@ M4：  API 鉴权 → 白名单（data_scopes/tools）→ 拦截器 → 审计  
 |---|---|---|
 | 子 Agent/子图 | 技能内部分工需要并行/独立循环 | 技能内部建 LangGraph 子图（core 零改动） |
 | 跨会话长期记忆 | 需要用户画像/全局知识 | LangGraph Store（InMemoryStore→PostgresStore），挂 `compile(store=)` |
-| 历史摘要/向量 | 窗口丢信息成真实痛点 | core/context.py 预留接口 |
+| 历史摘要/向量 | 窗口丢信息成真实痛点 | 预留接口 |
 
 ## 9. 技能插件（业务外部提供）
 
 - 技能为**外部插件**（Skill 子类 + manifest + 注册），core 只提供机制
-- 业务技能由外部按需提供（Skill 插件机制）；测试用 core 内置测试技能（tests/test_core.py）+ 临时技能包（tests/test_skills_loader.py）
+- 业务技能由外部按需提供（Skill 插件机制）；测试用内置测试技能（tests/*.test.ts）

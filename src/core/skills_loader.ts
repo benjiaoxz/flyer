@@ -1,5 +1,5 @@
 /** 技能包加载器：扫描 skills/ 目录自动注册 + skill.yaml manifest 解析
- * 对齐 Python 版 core/skills_loader.py
+ * 
  * 约定：skills/<id>/skill.yaml（manifest 段）+ handlers.ts（默认导出 Skill 实例）
  */
 import { readdirSync, existsSync, readFileSync } from "node:fs";

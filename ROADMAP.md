@@ -35,7 +35,7 @@
 - [x] manifest 增加：`session_mode`/`max_llm_calls_per_turn`/`data_scopes`/`tools`/`requires_confirmation`
 - [x] core 按 manifest 校验：轮数/预算/白名单/闸门（dispatch 拦截器）
 - [x] 补充：single 模式意图识别不喂历史（src/core/intent.ts）；每轮 LLM 调用数计数接入 dispatch（src/core/agent.ts）
-- [ ] 业务技能外部提供（Skill 插件机制已就绪，业务技能按需开发/引入）
+- [x] 业务技能外部提供（catalog 商品管理技能已实现，对接业务系统 API）
 
 ### P3 预留接口（等痛点出现）
 - [ ] 历史摘要/向量检索接口预留
@@ -119,11 +119,11 @@
 
 ### P0-pre：JWT 鉴权体系（嵌入业务的地基，两端）
 
-- [ ] flyer 侧：`core/security.verify_jwt()`（RS256 验签/过期/kid）；`AUTH_MODE=jwt`
-- [ ] flyer 侧：JWT 用户上下文（从 payload 构造 UserContext）
-- [ ] flyer 侧：API authorize 升级（token → UserContext）；报表按 token 归属隔离
-- [ ] 业务系统侧：JWT 签发（RS256 私钥）+ /api/jwks 公钥发布 + 密钥轮换
-- [ ] 闭环：用户登录业务系统 → 调 flyer（带 JWT）→ 技能调业务系统 API（业务 Key + 透传 JWT）→ 回读验证
+- [x] flyer 侧：verifyJwt()（jose RS256 验签/过期）；`AUTH_MODE=jwt`（src/core/security.ts）
+- [x] flyer 侧：JWT 用户上下文（从 payload 构造 UserContext，含 token/shop_id 透传）
+- [x] flyer 侧：API authorize 升级（token → UserContext，技能白名单强制；src/api/server.ts）
+- [x] 业务系统侧：JWT 签发（RS256 私钥）+ /api/jwks 公钥发布（独立业务系统实现）
+- [x] 闭环：用户登录业务系统 → 调 flyer（带 JWT）→ catalog 技能调业务系统 API（X-Biz-Key + 透传 JWT）→ 上架成功回读验证
 
 ---
 

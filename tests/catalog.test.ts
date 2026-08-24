@@ -203,3 +203,25 @@ describe("catalog 部分更新（只改价格/只改库存）", () => {
     expect(products[1].price).toBe(168);  // 价格未被误改
   });
 });
+
+describe("catalog 单商品查询（查单个 vs 查全部）", () => {
+  it("查单个（引号名称）→ 返回单个商品", async () => {
+    const r = await run('给我"调试鞋"所有的信息', "catalog_query");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("调试鞋");
+    expect(r.output).not.toContain("Nike 鞋");  // 不含其他商品
+  });
+
+  it("查全部（无名称）→ 返回列表", async () => {
+    const r = await run('查一下我的商品', "catalog_query");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("Nike 鞋");
+    expect(r.output).toContain("调试鞋");
+  });
+
+  it("查不存在的商品 → error", async () => {
+    const r = await run('给我"不存在鞋"信息', "catalog_query");
+    expect(r.status).toBe("error");
+    expect(r.output).toContain("未找到");
+  });
+});

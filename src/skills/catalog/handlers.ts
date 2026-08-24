@@ -56,13 +56,13 @@ const manifest: SkillManifest = {
   description: "商家上架/查询/修改/下架商品（对接业务系统）",
   intents: ["new_request", "catalog_add", "catalog_query", "catalog_update", "catalog_off"],
   intent_descriptions: {
-    catalog_add: "商家上架新商品（需商品名和价格）",
-    catalog_query: "查询商家自己的商品列表",
-    catalog_update: "修改商品价格或库存（需指定商品名）",
-    catalog_off: "下架商品（需指定商品名）",
+    catalog_add: "上架商品（用户说上架X时用；含创建或恢复）",
+    catalog_query: "查询/查看商品信息（用户说'给我X信息''查X''看X''X的价格库存状态'时用——只读不改）",
+    catalog_update: "修改/调整商品价格或库存（用户明确说改/调/修改时才用；仅查信息不是修改）",
+    catalog_off: "下架商品（用户说下架/删除X时用）",
   },
   cacheable_intents: ["catalog_query"],  // 写操作（上架/改/下架）不缓存
-  trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格"],
+  trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格", "信息", "详情", "查询", "查看", "给我"],
   session_mode: "single",
   max_turns_per_session: 1,
   max_llm_calls_per_turn: 2,
@@ -87,7 +87,9 @@ function parseProduct(text: string, action: string): { name?: string; price?: nu
       ? ["下架", "删除", "停用", "移除", "帮我", "请帮我", "把", "将", "的", "状态"]
       : action === "update"
         ? ["价格", "库存", "数量", "改为", "改成", "调成", "设为", "为", "到", "帮我", "请帮我", "把", "将", "的"]
-        : ["上架", "库存", "价格", "元", "块", "帮我", "请帮我", "把", "将", "的"];
+        : action === "query"
+          ? ["所有", "全部", "信息", "价格", "库存", "数量", "状态", "的", "给我", "查", "看", "资料", "详情"]
+          : ["上架", "库存", "价格", "元", "块", "帮我", "请帮我", "把", "将", "的"];
     let cleaned = text;
     for (const op of ops) cleaned = cleaned.split(op).join(" ");
     const firstWord = cleaned.match(/[\u4e00-\u9fa5A-Za-z0-9]+/);
@@ -184,6 +186,19 @@ const skill: Skill = {
           const products = await callBizApi<Product[]>("/api/products", "GET", token);
           if (!products.length) {
             return { status: "success", output: "暂无商品", data: {} };
+          }
+          // 指定了商品名 → 查单个商品；否则查全部
+          if (product.name) {
+            const target = products.find((p) => p.name === product.name)
+              ?? products.find((p) => p.name.includes(product.name!));
+            if (!target) {
+              return { status: "error", output: `未找到商品「${product.name}」`, reason: "商品不存在", data: {} };
+            }
+            return {
+              status: "success",
+              output: `📦 ${target.name}：${target.price}元，库存${target.stock}，状态${target.status}（id=${target.id}）`,
+              data: { product_id: target.id },
+            };
           }
           const lines = products.map(
             (p) => `${p.name}（${p.price}元，库存${p.stock}，${p.status}）`,

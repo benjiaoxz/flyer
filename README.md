@@ -54,5 +54,5 @@ npm test                    # 22 个测试（vitest）
 ## 项目文档
 
 - [**架构与流程图**](docs/ARCHITECTURE.md) — core 架构 + harness 五子系统 + 单轮请求时序
-- [**演进清单**](ROADMAP.md) — M6 harness 加固排期（P0 结果契约 / P1 指令声明层+任务状态 / P2 结果验证 / P3 执行目录）
+- [**演进清单**](ROADMAP.md) — M6 harness 加固排期（P0 结果契约 / P1 指令声明层+任务状态 / P2 结果验证）
 - [**PRD**](docs/PRD.md) / [**API 文档**](docs/API.md)

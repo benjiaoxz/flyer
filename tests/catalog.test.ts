@@ -346,6 +346,79 @@ describe("catalog 批量更新（表格批量改价/库存）", () => {
     expect(r.output).toContain("没有库存列");
     expect(products.find((p) => p.name === "调试鞋")?.price).toBe(before); // 价格未被误改
   });
+
+  it("描述条件：价格上限 → 超上限的行跳过并汇报", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\n调试鞋,199\n调试鞋2,300";
+    const r = await skill.handle(
+      { user_text: "批量上架价格低于200的", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_add_batch", params: { extra: { table: csv }, filters: { price_max: 200 } } } as never,
+      "批量上架价格低于200的",
+    );
+    expect(r.status).toBe("success"); // 跳过≠失败
+    expect(r.output).toContain("成功 1 条");
+    expect(r.output).toContain("跳过 1 条");
+    expect(r.output).toContain("调试鞋2:价格300高于上限200"); // 价格300>200 被过滤
+  });
+
+  it("描述条件：排除名单 → 排除的商品不处理", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\nNike 鞋,259\n调试鞋,129";
+    const r = await skill.handle(
+      { user_text: "批量调整价格，除了调试鞋", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_update", params: { extra: { table: csv }, filters: { exclude: ["调试鞋"] } } } as never,
+      "批量调整价格，除了调试鞋",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 1 条");
+    expect(r.output).toContain("跳过 1 条");
+    expect(r.output).toContain("在排除名单中");
+    expect(products.find((p) => p.name === "Nike 鞋")?.price).toBe(259);
+    expect(products.find((p) => p.name === "调试鞋")?.price).toBe(599); // 未被改
+  });
+
+  it("描述与表格数量不一致 → 拒绝并提示", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\n调试鞋,129";
+    const r = await skill.handle(
+      { user_text: "这9个商品都批量调整价格", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_update", params: { extra: { table: csv }, filters: { expected_count: 9 } } } as never,
+      "这9个商品都批量调整价格",
+    );
+    expect(r.status).toBe("error");
+    expect(r.output).toContain("你说的是 9 个商品");
+    expect(r.output).toContain("表格里有 1 行");
+    expect(products.find((p) => p.name === "调试鞋")?.price).toBe(599); // 未执行
+  });
+
+  it("全部行被条件过滤 → 明确提示而非静默成功", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const csv = "名称,价格\n调试鞋,199";
+    const r = await skill.handle(
+      { user_text: "批量上架价格低于100的", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_add_batch", params: { extra: { table: csv }, filters: { price_max: 100 } } } as never,
+      "批量上架价格低于100的",
+    );
+    expect(r.status).toBe("error");
+    expect(r.output).toContain("没有符合条件的商品行");
+  });
+
+  it("描述条件：状态过滤 → 只改 on_sale 商品", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[0] = { id: 1, shop_id: 1, name: "Nike 鞋", price: 299, stock: 50, status: "on_sale" };
+    products[1] = { id: 2, shop_id: 1, name: "调试鞋", price: 599, stock: 5, status: "off_sale" };
+    const csv = "名称,价格\nNike 鞋,259\n调试鞋,199";
+    const r = await skill.handle(
+      { user_text: "批量调整价格，只改上架中的", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_update", params: { extra: { table: csv }, filters: { status: "on_sale" } } } as never,
+      "批量调整价格，只改上架中的",
+    );
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("成功 1 条");
+    expect(r.output).toContain("状态off_sale不符合条件on_sale");
+    expect(products[0].price).toBe(259);  // on_sale 被改
+    expect(products[1].price).toBe(599);  // off_sale 未被改
+  });
 });
 
 describe("catalog 表格附件（table_text 一次打包）", () => {

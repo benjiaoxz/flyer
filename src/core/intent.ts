@@ -19,7 +19,8 @@ const BUILTIN_INTENTS: Record<string, string> = {
 
 // 通用业务字段抽取（技能无关，LLM 统一输出这些字段名）：
 // name=业务对象名（商品名/店铺名等）、price/stock/quantity=常见数值字段、
-// action_detail=补充动作描述（如"下架""恢复上架"）
+// action_detail=补充动作描述（如"下架""恢复上架"）、
+// filters=描述中的筛选/校验条件（表格等批量数据与描述不重合时按条件过滤/校验）
 const IntentSchema = z.object({
   intent: z.string(),
   params: z.object({
@@ -29,6 +30,15 @@ const IntentSchema = z.object({
     stock: z.number().optional(),
     quantity: z.number().optional(),
     action_detail: z.string().optional(),
+    filters: z.object({
+      price_min: z.number().optional(),    // "价格不低于X"
+      price_max: z.number().optional(),    // "价格低于/不超过X"
+      stock_min: z.number().optional(),    // "库存不低于X"
+      stock_max: z.number().optional(),    // "库存低于/不超过X"
+      status: z.string().optional(),       // "只改上架中的"等状态条件
+      exclude: z.array(z.string()).optional(), // "除了X"排除名单
+      expected_count: z.number().optional(),   // "这N个商品"预期数量（与表格行数校验）
+    }).optional(),
     extra: z.record(z.string(), z.unknown()).optional(),
   }).default({}),
   needs_input: z.boolean().optional(),
@@ -42,6 +52,8 @@ const DEFAULT_SYSTEM = `你是对话意图识别器。基于用户输入与对�
 1. 若输入承接上文（如"换黑色的""那预算呢"），必须结合历史判断，不要当作孤立的新需求
 2. 若信息不足以执行意图，needs_input=true 并给出最多 2 个追问问题（中文）
 3. 无法匹配任何意图时用 fallback
+4. 当用户描述对批量/表格数据附加了条件时（如"价格低于200的""库存超过10的""除了调试鞋""这9个商品"），
+   用 params.filters 结构化抽取：price_min/price_max/stock_min/stock_max/status/exclude/expected_count
 params 里放该意图需要的结构化参数（由技能自行解析）。`;
 
 export class IntentRecognizer {

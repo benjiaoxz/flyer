@@ -178,22 +178,32 @@ async function batchUpdateProducts(
   if (error) {
     return { status: "error", output: error, reason: "解析失败", data: {} };
   }
-  // 列护栏：用户明确说改库存/改价格，但表格列对不上 → 报错而非改错列
+  // 列护栏：用户明确说要改的字段，表格缺该列 → 报错而非改错列
   const detail = `${(intent.params?.action_detail as string | undefined) ?? ""} ${newText}`;
   const wantsStock = /库存|数量/.test(detail);
   const wantsPrice = /价格|单价|售价|定价/.test(detail);
   const hasPriceCol = items.some((i) => i.price !== undefined);
   const hasStockCol = items.some((i) => i.stock !== undefined);
-  if (wantsStock && !hasStockCol && hasPriceCol) {
-    return { status: "error", output: "表格中没有库存列（只有价格列）——请确认要改的是价格还是库存", reason: "列不匹配", data: {} };
+  if (wantsStock && !hasStockCol) {
+    return { status: "error", output: "表格中没有库存列——请确认表格列（名称/价格/库存）与要改的字段一致", reason: "列不匹配", data: {} };
   }
-  if (wantsPrice && !hasPriceCol && hasStockCol) {
-    return { status: "error", output: "表格中没有价格列（只有库存列）——请确认要改的是价格还是库存", reason: "列不匹配", data: {} };
+  if (wantsPrice && !hasPriceCol) {
+    return { status: "error", output: "表格中没有价格列——请确认表格列（名称/价格/库存）与要改的字段一致", reason: "列不匹配", data: {} };
+  }
+  // 描述条件与表格一致性：预期数量校验 + 行级过滤（价格/库存/排除），不满足的行跳过
+  const filters = (intent.params?.filters as RowFilters | undefined) ?? undefined;
+  const countErr = checkExpectedCount(filters?.expected_count, items);
+  if (countErr) {
+    return { status: "error", output: countErr, reason: "数量不一致", data: {} };
+  }
+  const { kept, skipped } = applyRowFilters(items, filters);
+  const failed: Array<{ name: string; reason: string }> = skipped.map((s) => ({ name: s.name, reason: `跳过: ${s.reason}` }));
+  if (!kept.length) {
+    return { status: "error", output: `没有符合条件的商品行（${skipped.length} 行被条件过滤）`, reason: "无符合行", data: { skipped_count: skipped.length } };
   }
   const products = await callBizApi<Product[]>("/api/products", "GET", token);
   const success: string[] = [];
-  const failed: Array<{ name: string; reason: string }> = [];
-  for (const item of items) {
+  for (const item of kept) {
     if (!item.name) {
       failed.push({ name: "(无名)", reason: "缺名称" });
       continue;
@@ -213,6 +223,10 @@ async function batchUpdateProducts(
       failed.push({ name: item.name, reason: "未找到该商品" });
       continue;
     }
+    if (filters?.status && target.status !== filters.status) {
+      failed.push({ name: item.name, reason: `跳过: 状态${target.status}不符合条件${filters.status}` });
+      continue;
+    }
     try {
       await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token, patch);
       success.push(item.name);
@@ -220,12 +234,67 @@ async function batchUpdateProducts(
       failed.push({ name: item.name, reason: (e as Error).message });
     }
   }
+  // 跳过（条件过滤）≠ 失败：只按真失败定 status
+  const skippedRows = failed.filter((f) => f.reason.startsWith("跳过:"));
+  const realFailed = failed.filter((f) => !f.reason.startsWith("跳过:"));
   return {
-    status: failed.length ? "error" : "success",
-    output: `✏️ 批量更新完成：成功 ${success.length} 条${failed.length ? `，失败 ${failed.length} 条（${failed.map((f) => `${f.name}:${f.reason}`).join("；")}）` : ""}`,
-    reason: failed.length ? `部分失败: ${failed.map((f) => f.name).join("、")}` : "",
-    data: { success_count: success.length, failed_count: failed.length },
+    status: realFailed.length ? "error" : "success",
+    output: `✏️ 批量更新完成：成功 ${success.length} 条${skippedRows.length ? `，跳过 ${skippedRows.length} 条（${skippedRows.map((f) => `${f.name}:${f.reason.slice("跳过: ".length)}`).join("；")}）` : ""}${realFailed.length ? `，失败 ${realFailed.length} 条（${realFailed.map((f) => `${f.name}:${f.reason}`).join("；")}）` : ""}`,
+    reason: realFailed.length ? `部分失败: ${realFailed.map((f) => f.name).join("、")}` : "",
+    data: { success_count: success.length, failed_count: realFailed.length, skipped_count: skippedRows.length },
   };
+}
+
+/** 描述中的筛选/校验条件（LLM 从文字抽取，代码确定性应用） */
+interface RowFilters {
+  price_min?: number;
+  price_max?: number;
+  stock_min?: number;
+  stock_max?: number;
+  status?: string;
+  exclude?: string[];
+  expected_count?: number;
+}
+
+/** 行级条件过滤：描述条件（价格/库存上下限、排除名单）与表格行校验，不满足的行跳过 */
+function applyRowFilters(
+  items: Array<{ name?: string; price?: number; stock?: number }>,
+  filters: RowFilters | undefined,
+): { kept: Array<{ name?: string; price?: number; stock?: number }>; skipped: Array<{ name: string; reason: string }> } {
+  if (!filters) return { kept: items, skipped: [] };
+  const kept: Array<{ name?: string; price?: number; stock?: number }> = [];
+  const skipped: Array<{ name: string; reason: string }> = [];
+  for (const item of items) {
+    const reasons: string[] = [];
+    const label = item.name ?? "(无名)";
+    if (filters.exclude?.length && item.name && filters.exclude.includes(item.name)) {
+      reasons.push("在排除名单中");
+    }
+    if (filters.price_min != null && item.price !== undefined && item.price < filters.price_min) {
+      reasons.push(`价格${item.price}低于下限${filters.price_min}`);
+    }
+    if (filters.price_max != null && item.price !== undefined && item.price > filters.price_max) {
+      reasons.push(`价格${item.price}高于上限${filters.price_max}`);
+    }
+    if (filters.stock_min != null && item.stock !== undefined && item.stock < filters.stock_min) {
+      reasons.push(`库存${item.stock}低于下限${filters.stock_min}`);
+    }
+    if (filters.stock_max != null && item.stock !== undefined && item.stock > filters.stock_max) {
+      reasons.push(`库存${item.stock}高于上限${filters.stock_max}`);
+    }
+    if (reasons.length) skipped.push({ name: label, reason: reasons.join("；") });
+    else kept.push(item);
+  }
+  return { kept, skipped };
+}
+
+/** 描述与表格数量一致性校验："这N个商品" 但表格行数不符 → 返回错误文案 */
+function checkExpectedCount(expected: number | undefined, items: unknown[]): string | null {
+  if (expected == null) return null;
+  if (items.length !== expected) {
+    return `你说的是 ${expected} 个商品，但表格里有 ${items.length} 行——数量不一致，请核对后再操作`;
+  }
+  return null;
 }
 
 const skill: Skill = {
@@ -288,17 +357,31 @@ const skill: Skill = {
           }
           // 是否明确"上架"意图（决定已存在商品是否恢复上架；表格驱动调整时不强制改状态）
           const restoreOnSale = /上架|恢复|重新上架/.test(newText);
+          // 描述条件与表格一致性：预期数量校验 + 行级过滤（价格/库存/排除），不满足的行跳过
+          const filters = (intent.params?.filters as RowFilters | undefined) ?? undefined;
+          const countErr = checkExpectedCount(filters?.expected_count, items);
+          if (countErr) {
+            return { status: "error", output: countErr, reason: "数量不一致", data: {} };
+          }
+          const { kept, skipped } = applyRowFilters(items, filters);
+          const failed: Array<{ name: string; reason: string }> = skipped.map((s) => ({ name: s.name, reason: `跳过: ${s.reason}` }));
+          if (!kept.length) {
+            return { status: "error", output: `没有符合条件的商品行（${skipped.length} 行被条件过滤）`, reason: "无符合行", data: { skipped_count: skipped.length } };
+          }
           // 逐条上架（复用 add 逻辑，同名恢复/创建）
           const success: string[] = [];
-          const failed: Array<{ name: string; reason: string }> = [];
           const existing = await callBizApi<Product[]>("/api/products", "GET", token);
-          for (const item of items) {
+          for (const item of kept) {
             if (!item.name || !item.price) {
               failed.push({ name: item.name ?? "(无名)", reason: "缺名称或价格" });
               continue;
             }
             try {
               const target = existing.find((x) => x.name === item.name);
+              if (filters?.status && target && target.status !== filters.status) {
+                failed.push({ name: item.name, reason: `跳过: 状态${target.status}不符合条件${filters.status}` });
+                continue;
+              }
               if (target) {
                 // 已存在：更新字段；仅用户明确"上架"时恢复 on_sale（表格驱动调整不动状态）
                 await callBizApi<Product>(`/api/products/${target.id}`, "PATCH", token,
@@ -313,11 +396,14 @@ const skill: Skill = {
               failed.push({ name: item.name, reason: (e as Error).message });
             }
           }
+          // 跳过（条件过滤）≠ 失败：只按真失败定 status
+          const skippedRows = failed.filter((f) => f.reason.startsWith("跳过:"));
+          const realFailed = failed.filter((f) => !f.reason.startsWith("跳过:"));
           return {
-            status: failed.length ? "error" : "success",
-            output: `📊 批量上架完成：成功 ${success.length} 条${failed.length ? `，失败 ${failed.length} 条（${failed.map((f) => `${f.name}:${f.reason}`).join("；")}）` : ""}`,
-            reason: failed.length ? `部分失败: ${failed.map((f) => f.name).join("、")}` : "",
-            data: { success_count: success.length, failed_count: failed.length },
+            status: realFailed.length ? "error" : "success",
+            output: `📊 批量上架完成：成功 ${success.length} 条${skippedRows.length ? `，跳过 ${skippedRows.length} 条（${skippedRows.map((f) => `${f.name}:${f.reason.slice("跳过: ".length)}`).join("；")}）` : ""}${realFailed.length ? `，失败 ${realFailed.length} 条（${realFailed.map((f) => `${f.name}:${f.reason}`).join("；")}）` : ""}`,
+            reason: realFailed.length ? `部分失败: ${realFailed.map((f) => f.name).join("、")}` : "",
+            data: { success_count: success.length, failed_count: realFailed.length, skipped_count: skippedRows.length },
           };
         }
         case "add": {

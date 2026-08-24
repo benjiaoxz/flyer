@@ -238,3 +238,17 @@ describe("catalog LLM params 优先（字段语义抽取）", () => {
     expect(products[1].stock).toBe(60);  // params 的 stock=60 生效（正则可能抓不到"调低到60"）
   });
 });
+
+describe("catalog 改名（new_name）", () => {
+  it("名称改为X → 商品名更新", async () => {
+    products[0] = { ...products[0], name: "Nike 鞋" };
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    const r = await skill.handle(
+      { user_text: "Nike 鞋名称改为Nike Pro", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
+      { intent: "catalog_update", params: { name: "Nike 鞋", new_name: "Nike Pro" } } as never,
+      "Nike 鞋名称改为Nike Pro",
+    );
+    expect(r.status).toBe("success");
+    expect(products[0].name).toBe("Nike Pro");
+  });
+});

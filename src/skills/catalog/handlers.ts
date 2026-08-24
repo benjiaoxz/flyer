@@ -62,7 +62,7 @@ const manifest: SkillManifest = {
     catalog_off: "下架商品（用户说下架/删除X时用）",
   },
   cacheable_intents: ["catalog_query"],  // 写操作（上架/改/下架）不缓存
-  trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格", "信息", "详情", "查询", "查看", "给我"],
+  trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格", "信息", "详情", "查询", "查看", "给我", "名称", "改名", "修改", "调整"],
   session_mode: "single",
   max_turns_per_session: 1,
   max_llm_calls_per_turn: 2,
@@ -75,8 +75,8 @@ const manifest: SkillManifest = {
  * - update（改）：名称 + 价格/库存（价格需"价格/改为/元"等确认，防裸数字误抓）
  * - query（查询）：不解析
  */
-function parseProduct(text: string, action: string): { name?: string; price?: number; stock?: number } {
-  const out: { name?: string; price?: number; stock?: number } = {};
+function parseProduct(text: string, action: string): { name?: string; new_name?: string; price?: number; stock?: number } {
+  const out: { name?: string; new_name?: string; price?: number; stock?: number } = {};
   // 引号包裹的名称（最明确）；清洗引号字符
   const quoted = text.match(/["'「」《](.+?)["'」》]/);
   if (quoted) {
@@ -106,6 +106,9 @@ function parseProduct(text: string, action: string): { name?: string; price?: nu
     const stockMatch = text.match(/(?:库存|数量)(?:\s*|改成|改为|调成|设为|变成|调整为|为|到)\s*(\d+)/);
     if (stockMatch) out.stock = Number(stockMatch[1]);
   }
+  // 改名目标："X名称改为Y" / "X改名为Y" / "重命名X为Y" → Y（引号或自然文本）
+  const renameMatch = text.match(/(?:名称|名字|改名|重命名)(?:改为|改成|为|成|叫)?\s*["'「」《]?([^"'「」》\s，。,]+)["'「」》]?/);
+  if (renameMatch && action === "update") out.new_name = renameMatch[1].trim();
   return out;
 }
 
@@ -139,6 +142,7 @@ const skill: Skill = {
       const p = intent.params ?? {};
       const product = {
         name: (p.name as string | undefined) ?? regex.name,
+        new_name: (p.new_name as string | undefined) ?? regex.new_name,
         price: (p.price as number | undefined) ?? regex.price,
         stock: (p.stock as number | undefined) ?? regex.stock,
       };
@@ -213,11 +217,13 @@ const skill: Skill = {
           return { status: "success", output: `📦 商品列表：\n${lines.join("\n")}`, data: { count: products.length } };
         }
         case "update": {
-          if (!product.name || (!product.price && !product.stock)) {
+          // 支持改名/改价/改库存任意组合；至少有一个更新目标才执行
+          const hasUpdate = product.new_name !== undefined || product.price !== undefined || product.stock !== undefined;
+          if (!product.name || !hasUpdate) {
             return {
               status: "error",
-              output: "改价/改库存需要商品名和值（如：改\"Nike 鞋\"价格 259元）",
-              reason: "缺少商品名或更新值",
+              output: "修改需要指定商品名和要改的内容（如：改\"Nike 鞋\"价格 259元 / 名称改为X / 库存改N）",
+              reason: "缺少商品名或更新内容",
               data: {},
             };
           }
@@ -228,8 +234,9 @@ const skill: Skill = {
           if (!target) {
             return { status: "error", output: `未找到商品「${product.name}」`, reason: "商品不存在", data: {} };
           }
-          // 部分更新：只传用户指定的字段（可只改价格/只改库存/两者都改）
+          // 部分更新：只传用户指定的字段（改名/改价/改库存任意组合）
           const patch: Record<string, unknown> = { status: "on_sale" };
+          if (product.new_name !== undefined) patch.name = product.new_name;
           if (product.price !== undefined) patch.price = product.price;
           if (product.stock !== undefined) patch.stock = product.stock;
           const updated = await callBizApi<Product>(

@@ -21,7 +21,8 @@ const BUILTIN_INTENTS: Record<string, string> = {
 const IntentSchema = z.object({
   intent: z.string(),
   params: z.object({
-    name: z.string().optional(),
+    name: z.string().optional(),       // 业务对象名（定位用，如旧商品名）
+    new_name: z.string().optional(),   // 改名目标（如"X名称改为Y"的 Y）
     price: z.number().optional(),
     stock: z.number().optional(),
     quantity: z.number().optional(),

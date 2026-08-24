@@ -51,8 +51,8 @@ export class IntentRecognizer {
           model: config.llmModel,
           apiKey: config.llmApiKey,
           configuration: { baseURL: config.llmBaseUrl },
-        }).withStructuredOutput(IntentSchema);
-        const system = this.buildSystem(candidates);
+        }).withStructuredOutput(IntentSchema, { method: "functionCalling" });
+        const system = this.buildSystem(candidates, intentsDesc);
         const res = (await model.invoke([
           { role: "system", content: system },
           { role: "user", content: `对话历史：\n${history}\n\n用户输入：${newText}` },
@@ -85,20 +85,24 @@ export class IntentRecognizer {
     const desc: Record<string, string> = {};
     for (const skill of this.registry.list()) {
       if (!candidates.has(skill.manifest.id)) continue;
+      const perIntent = skill.manifest.intent_descriptions ?? {};
       for (const intent of skill.manifest.intents) {
-        desc[intent] = `${skill.manifest.description}（技能 ${skill.manifest.id}）`;
+        desc[intent] = `${perIntent[intent] ?? skill.manifest.description}（技能 ${skill.manifest.id}）`;
       }
     }
     return desc;
   }
 
-  private buildSystem(candidates: Set<string>): string {
+  private buildSystem(candidates: Set<string>, intentsDesc: string): string {
     const extra = this.registry
       .list()
       .filter((s) => candidates.has(s.manifest.id) && s.manifest.system_prompt)
       .map((s) => s.manifest.system_prompt)
       .join("\n");
-    return DEFAULT_SYSTEM + (extra ? `\n\n技能附加指令：\n${extra}` : "");
+    return (
+      DEFAULT_SYSTEM.replace("{intents}", intentsDesc) +
+      (extra ? `\n\n技能附加指令：\n${extra}` : "")
+    );
   }
 
   private lastSkillIsSingle(state: GenericState): boolean {

@@ -32,6 +32,8 @@ export interface SkillManifest {
   name: string;
   description: string;
   intents: string[];
+  /** 每个意图的独立职责描述（供意图识别区分，如 catalog_update=修改价格/库存） */
+  intent_descriptions?: Record<string, string>;
   trigger_keywords?: string[];
   system_prompt?: string;
   session_mode?: "single" | "multi";

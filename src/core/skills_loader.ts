@@ -17,7 +17,7 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 export const SKILLS_DIR = process.env.FLYER_SKILLS_DIR || join(MODULE_DIR, "..", "skills");
 
 const MANIFEST_FIELDS = [
-  "name", "description", "intents", "trigger_keywords", "system_prompt",
+  "name", "description", "intents", "intent_descriptions", "trigger_keywords", "system_prompt",
   "session_mode", "max_turns_per_session", "max_llm_calls_per_turn",
   "token_budget_per_session", "data_scopes", "tools",
   "requires_confirmation", "confirmation_after",

@@ -55,6 +55,12 @@ const manifest: SkillManifest = {
   name: "商品管理",
   description: "商家上架/查询/修改/下架商品（对接业务系统）",
   intents: ["new_request", "catalog_add", "catalog_query", "catalog_update", "catalog_off"],
+  intent_descriptions: {
+    catalog_add: "商家上架新商品（需商品名和价格）",
+    catalog_query: "查询商家自己的商品列表",
+    catalog_update: "修改商品价格或库存（需指定商品名）",
+    catalog_off: "下架商品（需指定商品名）",
+  },
   trigger_keywords: ["上架", "商品", "下架", "改价", "库存", "价格"],
   session_mode: "single",
   max_turns_per_session: 2,
@@ -62,14 +68,25 @@ const manifest: SkillManifest = {
   data_scopes: ["shop"],
 };
 
-/** 解析商品字段（确定性规则，不依赖 LLM） */
+/** 解析商品字段（确定性规则，不依赖 LLM）
+ * 名称来源优先级：引号内 > "把X的库存" > "X的价格" > "改X" 前缀
+ */
 function parseProduct(text: string): { name?: string; price?: number; stock?: number } {
   const out: { name?: string; price?: number; stock?: number } = {};
-  const nameMatch = text.match(/["'「」《](.+?)["'」》]/);
-  if (nameMatch) out.name = nameMatch[1];
+  // 引号包裹的名称（最明确）
+  const quoted = text.match(/["'「」《](.+?)["'」》]/);
+  if (quoted) {
+    out.name = quoted[1];
+  } else {
+    // 无引号：从"把X的库存/价格"或"改X"提取
+    const withStock = text.match(/(?:把|将)(.+?)(?:的)?(?:库存|价格|数量)/);
+    const withChange = text.match(/(?:改|修改)(.+?)(?:的)?(?:价格|库存|为|到)/);
+    const anyMatch = text.match(/(?:把|将|改|修改)([^，。,\s]+)/);
+    out.name = (withStock?.[1] ?? withChange?.[1] ?? anyMatch?.[1] ?? "").replace(/[的将把]/g, "").trim() || undefined;
+  }
   const priceMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:元|块)/);
   if (priceMatch) out.price = Number(priceMatch[1]);
-  const stockMatch = text.match(/库存\s*(\d+)/);
+  const stockMatch = text.match(/(?:库存|数量)(?:\s*|改成|改为|调成|设为|变成|为)\s*(\d+)/);
   if (stockMatch) out.stock = Number(stockMatch[1]);
   return out;
 }

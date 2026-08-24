@@ -143,3 +143,25 @@ describe("catalog 字段解析增强（用户真实输入）", () => {
     expect(r.output).not.toContain('"调试鞋"');
   });
 });
+
+describe("catalog 下架名称解析（操作词剔除）", () => {
+  it("无引号下架 → 名称不含'下架'", async () => {
+    const r = await run('帮我把调试鞋下架', "catalog_off");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("「调试鞋」");
+    expect(r.output).not.toContain("下架」");
+  });
+
+  it("引号下架 → 名称清洗", async () => {
+    const r = await run('帮我把"调试鞋"下架', "catalog_off");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("「调试鞋」");
+  });
+
+  it("状态改为下架 → 名称不含'状态'", async () => {
+    const r = await run('帮我把"调试鞋"的状态改为下架', "catalog_off");
+    expect(r.status).toBe("success");
+    expect(r.output).toContain("「调试鞋」");
+    expect(r.output).not.toContain("状态");
+  });
+});

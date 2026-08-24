@@ -68,30 +68,42 @@ const manifest: SkillManifest = {
   data_scopes: ["shop"],
 };
 
-/** 解析商品字段（确定性规则，不依赖 LLM）
- * 名称来源优先级：引号内 > "把X的库存" > "X的价格" > "改X" 前缀
+/** 解析商品字段（按操作类型限定，避免误抓）
+ * - off（下架）：只解析名称，剔除操作词
+ * - add（上架）：名称 + 价格（需货币词）+ 库存
+ * - update（改）：名称 + 价格/库存（价格需"价格/改为/元"等确认，防裸数字误抓）
+ * - query（查询）：不解析
  */
-function parseProduct(text: string): { name?: string; price?: number; stock?: number } {
+function parseProduct(text: string, action: string): { name?: string; price?: number; stock?: number } {
   const out: { name?: string; price?: number; stock?: number } = {};
-  // 引号包裹的名称（最明确）；清洗掉引号字符
+  // 引号包裹的名称（最明确）；清洗引号字符
   const quoted = text.match(/["'「」《](.+?)["'」》]/);
   if (quoted) {
     out.name = quoted[1].trim();
-  } else {
-    // 无引号：从"把X的库存/价格"或"改X"提取
-    const withStock = text.match(/(?:把|将)(.+?)(?:的)?(?:库存|价格|数量)/);
-    const withChange = text.match(/(?:改|修改)(.+?)(?:的)?(?:价格|库存|为|到)/);
-    const anyMatch = text.match(/(?:把|将|改|修改)([^，。,\s]+)/);
-    out.name = (withStock?.[1] ?? withChange?.[1] ?? anyMatch?.[1] ?? "")
-      .replace(/[的将把"'"'「」《》]/g, "").trim() || undefined;
+  } else if (action !== "query") {
+    // 无引号：剔除操作指令词，取剩余部分的首个连续词作为名称
+    const ops = action === "off"
+      ? ["下架", "删除", "停用", "移除", "帮我", "请帮我", "把", "将", "的", "状态"]
+      : action === "update"
+        ? ["价格", "库存", "数量", "改为", "改成", "调成", "设为", "为", "到", "帮我", "请帮我", "把", "将", "的"]
+        : ["上架", "库存", "价格", "元", "块", "帮我", "请帮我", "把", "将", "的"];
+    let cleaned = text;
+    for (const op of ops) cleaned = cleaned.split(op).join(" ");
+    const firstWord = cleaned.match(/[\u4e00-\u9fa5A-Za-z0-9]+/);
+    out.name = (firstWord?.[0] ?? "").trim() || undefined;
   }
-  // 价格：支持"价格改为N""改为N元""价格N元"N元"等（N 后可不带"元"）
-  const priceMatch = text.match(
-    /(?:价格|单价|售价|定价)?(?:改为|改成|调成|设为|调整|调)?(\d+(?:\.\d+)?)\s*(?:元|块)?/,
-  );
-  if (priceMatch) out.price = Number(priceMatch[1]);
-  const stockMatch = text.match(/(?:库存|数量)(?:\s*|改成|改为|调成|设为|变成|为)\s*(\d+)/);
-  if (stockMatch) out.stock = Number(stockMatch[1]);
+  if (action === "update" || action === "add") {
+    // 价格：必须含"价格/改为/元"等确认词（防"调试鞋2"的 2 误当价格）
+    const priceMatch = text.match(/(?:价格|单价|售价|定价|改为|改成|调成|设为|为)(\d+(?:\.\d+)?)\s*(?:元|块)?/);
+    if (priceMatch) {
+      out.price = Number(priceMatch[1]);
+    } else {
+      const yuanMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:元|块)/);
+      if (yuanMatch) out.price = Number(yuanMatch[1]);
+    }
+    const stockMatch = text.match(/(?:库存|数量)(?:\s*|改成|改为|调成|设为|变成|为)\s*(\d+)/);
+    if (stockMatch) out.stock = Number(stockMatch[1]);
+  }
   return out;
 }
 
@@ -120,7 +132,7 @@ const skill: Skill = {
         else if (newText.includes("查") || newText.includes("看")) action = "query";
         else action = "add";
       }
-      const product = parseProduct(newText);
+      const product = parseProduct(newText, action);
 
       switch (action) {
         case "add": {

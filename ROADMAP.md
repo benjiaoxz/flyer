@@ -139,6 +139,6 @@
 
 | 阶段 | 方式 | 说明 |
 |---|---|---|
-| 当前 | 本地 uv + Docker（临时库） | 开发验证 |
+| 当前 | 本地 uv + Docker（本地开发库） | 开发验证 |
 | M4 后 | Docker 容器化 | 已有 Dockerfile；DB 用环境变量切换 |
 | 规模化 | K8s / 云托管 | 弹性伸缩、多副本（Checkpointer 换 Postgres） |

@@ -52,12 +52,16 @@ POST /api/chat {text, thread_id}
 {
   "status": "result",
   "output": "技能回复文本",                       // 用户可读回复
-  "data": {                                      // 技能命名空间（按技能而异）
-    "<skill_id>": { ... 技能自定义产出 ... }
+  "data": {                                      // 技能自定义产出（顶层字段，按技能而异）
+    "charts": [ {"title": "...", "type": "bar", "series": [{"name": "A", "value": 1}]} ],  // report 技能
+    "summary": "..."                            // report 技能（报告模式）
   },
   "thread_id": "user_1:session_a"
 }
 ```
+
+`data` 为技能直接写入的顶层字段（`SkillResult.data`），无 `<skill_id>` 包裹；
+各技能产出结构见对应技能文档（`src/skills/<id>/README.md`，如 report 技能返回 `charts`/`summary` 见 [ChatBI.md](ChatBI.md)）。
 
 ### POST /api/resume
 
@@ -80,8 +84,9 @@ chat(text) → need_input → 展示问题 → resume(answer) → need_input(循
 ```
 
 ### 4.2 技能数据展示
-- `data.<skill_id>`：技能自定义状态/产出（按技能而异，由技能写入）
+- `data`：技能自定义产出（顶层字段，按技能而异，由技能写入）
 - `output`：技能产出的可读文本（可直接展示）
+- 例：report 技能（数据看板）返回 `data.charts`（数组，每项 `{title, type, series}`）+ 可选 `data.summary`，对接结构见 [ChatBI.md](ChatBI.md)
 
 ### 4.3 多轮与崩溃恢复
 - 同一会话固定 `thread_id`；服务端 `CHECKPOINTER=sqlite` 时崩溃/重启可恢复会话

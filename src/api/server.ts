@@ -118,7 +118,7 @@ export function buildApi(agent: Agent) {
     });
   });
 
-  registerUpload(app, authorize);  // 文件上传（mall-web 批量上架）
+  registerUpload(app, authorize);  // 文件上传（前端附件通道，表格批量操作使用）
 
   app.get("/api/usage", async (req) => {
     await authorize(req);

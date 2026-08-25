@@ -1,7 +1,8 @@
 # report 技能：数据看板（ChatBI）
 
-运营用自然语言问数 → 网关取数聚合 → 前端渲染图表看板 / 报告，支持下载。
-对接业务系统 `/api/stats`（SQL 聚合）+ 前端 ECharts（mall-web）。
+运营用自然语言问数 → 网关语义解析 + 取数 → 返回图表数据（前端预期渲染看板/报告，支持下载）。
+对接业务系统**预期提供的** `/api/stats` 统计接口（聚合由业务系统承担，契约见 docs/ChatBI.md §2）。
+mall-web 为测试辅助实现，真实前端按 `data.charts` 契约对接。
 
 ## 1. 意图与参数
 
@@ -19,22 +20,22 @@
 ```
 用户描述 → ① LLM 抽结构化参数（唯一 AI 环节，system_prompt 指导 extra 结构）
          → ② 代码校验参数合法性 + 图表类型-数据形态匹配（折线需时间轴，月份不适合饼图）
-         → ③ 调 biz /api/stats（SQL 聚合，数据不经过网关）→ 聚合结果
+         → ③ 调业务系统 /api/stats（预期提供的聚合接口）→ 聚合结果
          → ④ 生成 charts: [{title, type, series:[{name,value}]}]（TopN 前10）
          → ⑤ 报告模式：第二次 LLM 写总结文字
-         → ⑥ 前端按 type 套 ECharts 模板渲染（交互/PNG/CSV 全前端）
+         → ⑥ 前端按 type 套模板渲染（交互/PNG/CSV 由前端实现）
 ```
 
 ## 3. 分工边界
 
 - **AI 只做**：意图识别 + 参数抽取 + 报告总结文字
 - **网关代码做**：参数校验、类型匹配、取数、TopN、标题模板
-- **前端做**：ECharts option 模板、看板布局、tooltip/缩放、PNG 下载（getDataURL）、CSV 下载
-- **业务服务器做**：SQL 聚合（/api/stats），网关永不拉原始大数据
+- **前端做（预期）**：图表模板、看板布局、tooltip/缩放、PNG 下载、CSV 下载——网关不做 UI
+- **业务系统做（预期）**：聚合取数（/api/stats），网关只拿聚合结果，不拉原始大数据
 
 ## 4. 权限与缓存
 
-- `data_scopes: [shop]`——商家只看自己店铺（stats 端点按 JWT shop_id 过滤）
+- `data_scopes: [shop]`——商家只看自己店铺（业务系统按 JWT 过滤数据域）
 - `cacheable_intents: []`——报表数据动态，**不进语义缓存**（缓存会返回过期报表）
 - 无数据 → 明确提示"该维度暂无数据"
 

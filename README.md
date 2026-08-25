@@ -37,19 +37,23 @@ npm run api                 # 启动 Fastify API（默认 8099）
 ```
 
 ```bash
-npm test                    # 22 个测试（vitest）
+npm test                    # 93 个测试（vitest）
 ```
 
-## 与业务系统对接
+> **测试辅助实现**：`mall-web/`（商城界面）与 flyer-biz（业务系统）为帮助本网关联调的测试夹具，
+> 不属于网关产品本体——真实前端/业务系统按本文与 [docs/](docs/) 中的**接入契约**对接即可。
+
+## 与业务系统对接（接入契约）
 
 ```
-商城用户登录业务系统 → JWT（sub/role/scopes/skills，业务系统签发）
+商城用户登录业务系统 → JWT（sub/role/scopes/skills，业务系统签发，见 docs/ChatBI.md §2.2 最小契约）
   → 调 flyer /api/chat（Bearer JWT）
   → flyer 验证 RS256 公钥 → UserContext → 技能白名单强制
-  → 技能调业务系统 API（X-Biz-Key + 透传 JWT）
+  → 技能调业务系统 API（X-Biz-Key + 透传 JWT，路径/结构为技能与业务系统的约定）
 ```
 
 配置见 `.env.example`（`AUTH_MODE=none/api_key/jwt`；`JWT_PUBLIC_KEY` = 业务系统签发的公钥 base64；`BIZ_BASE_URL`/`BIZ_API_KEY` = 业务系统对接）。
+接入其他业务系统：按 JWT 契约配置身份 → 按技能约定实现业务 API（如 report 需 `/api/stats`，见 [docs/ChatBI.md](docs/ChatBI.md)）→ 网关即连通。
 
 ## 项目文档
 

@@ -40,6 +40,9 @@ npm run api                 # 启动 Fastify API（默认 8099）
 npm test                    # 93 个测试（vitest）
 ```
 
+> **开发环境**：网关开发与测试不依赖任何外部服务——技能单元测试全部 mock（`AGENT_DRY_RUN` 下无需 LLM key）。
+> 与业务系统端到端联调为可选项：按 [docs/ChatBI.md](docs/ChatBI.md) 接入契约自备业务系统即可。
+
 ## 与业务系统对接（接入契约）
 
 ```

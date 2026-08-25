@@ -1,0 +1,25 @@
+manifest:
+  id: report
+  name: 数据看板
+  description: 运营数据问答：按描述取数生成图表看板/报告（对接业务系统统计）
+  intents:
+    - report_chart
+    - report_summary
+  intent_descriptions:
+    report_chart: "生成图表看板（用户说'看看X对比/分布/排行/趋势'时用——只读查询并生成图表）"
+    report_summary: "生成数据报告（用户说'总结一下''报告一下''这周怎么样'时用——总结文字+图表）"
+  cacheable_intents: []   # 报表数据动态，不进语义缓存（缓存会返回过期报表）
+  trigger_keywords: [图表, 看板, 对比, 分布, 排行, 趋势, 统计, 报表, 报告, 汇总, 总结, 占比, 销量, 销售额, 走势, 比例, 订单, 情况]
+  system_prompt: |
+    当识别 report 技能意图时，用 params.extra 输出结构化参数：
+    { "dataset": "products|orders", "group_by": "status|name|month|product",
+      "metric": "count|price|stock|amount|quantity", "chart_type": "bar|pie|line",
+      "summary": true/false }
+    推断规则：
+    - 占比/比例/构成 → chart_type=pie；趋势/走势/每月/变化 → chart_type=line 且 group_by=month；对比/排行/分布 → bar
+    - dataset 缺省 orders；group_by 缺省按数据集（products→name，orders→status）
+    - 报告模式（report_summary 或"总结/报告"语气）summary=true
+  session_mode: single
+  max_turns_per_session: 1
+  max_llm_calls_per_turn: 2
+  data_scopes: [shop]

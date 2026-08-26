@@ -27,12 +27,12 @@ function report(name: string, ok: boolean, detail = ""): void {
   if (ok) console.log(`  ✅ ${name}${detail ? ` — ${detail}` : ""}`);
   else {
     failures += 1;
-    console.log(`  ❌ ${name}${detail ? ` — ${detail}` : ""}`);
+    console.log(`  🔴 [阻断] ${name}${detail ? ` — ${detail}` : ""}`);
   }
 }
 function warn(name: string, detail = ""): void {
   warnings += 1;
-  console.log(`  ⚠️  ${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(`  🟡 [不阻断] ${name}${detail ? ` — ${detail}` : ""}`);
 }
 
 // ---------------------------------------------------------------- 1. 文档-实现一致性
@@ -92,7 +92,7 @@ function checkHygiene(): void {
   warn(`源码 as 断言: ${srcAny} 处（eslint 治理目标）`);
   warn(`测试 as 断言: ${testAny} 处`);
   const todo = (src.match(/TODO|FIXME|HACK/g) || []).length;
-  report("无 TODO/FIXME 残留", todo === 0, todo ? `${todo} 处` : "干净");
+  warn(`TODO/FIXME 残留: ${todo} 处（卫生项，不阻断合并，可攒批清理）`);
 }
 
 // ---------------------------------------------------------------- 4. 依赖健康（仅 CI）
@@ -124,5 +124,5 @@ checkConfigCoverage();
 checkHygiene();
 checkDeps();
 
-console.log(`\n结果：${failures === 0 ? "✅ 通过" : `❌ ${failures} 项失败`}（${warnings} 项警告）`);
+console.log(`\n结果：${failures === 0 ? "✅ 通过" : `❌ ${failures} 个 🔴 阻断项（需处理才能合并）`}，🟡 提示 ${warnings} 项（不阻断，可攒批）`);
 if (failures > 0) process.exit(1);

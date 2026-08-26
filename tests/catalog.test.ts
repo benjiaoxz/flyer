@@ -46,6 +46,13 @@ beforeEach(() => {
       Object.assign(p, JSON.parse(String(init?.body)));
       return { ok: true, json: async () => p } as Response;
     }
+    if (match && method === "GET") {
+      // verify 回读：GET 单商品
+      const p = products.find((x) => x.id === Number(match[1]));
+      return p
+        ? { ok: true, json: async () => p } as Response
+        : { ok: false, json: async () => ({ detail: "not found" }) } as Response;
+    }
     return { ok: false, json: async () => ({ detail: "not found" }) } as Response;
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -670,5 +677,53 @@ describe("catalog 上传文件批量上架", () => {
     expect(t.headers).toContain("价格");
     expect(t.rows).toHaveLength(2);
     expect(t.rows[0].name ?? t.rows[0]["名称"]).toBe("标题表鞋A");
+  });
+});
+
+describe("catalog verify 回读验证（基于意图，非 newText 正则）", () => {
+  const vctx = { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 };
+
+  it("update 改价：回读价格一致 → 通过", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[0] = { id: 1, shop_id: 1, name: "Nike 鞋", price: 259, stock: 50, status: "on_sale" };
+    const ok = await skill.verify!(
+      { user_text: "改Nike鞋价格259", user_ctx: vctx, intent: "catalog_update", intent_params: { name: "Nike 鞋", price: 259 } } as never,
+      { status: "success", data: { product_id: 1 } } as never,
+      "改Nike鞋价格259",
+    );
+    expect(ok).toBe(true);
+  });
+
+  it("update 改库存：回读库存不一致 → 不通过", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[0] = { id: 1, shop_id: 1, name: "Nike 鞋", price: 299, stock: 60, status: "on_sale" }; // 期望 50，实际 60
+    const ok = await skill.verify!(
+      { user_text: "库存改成50", user_ctx: vctx, intent: "catalog_update", intent_params: { name: "Nike 鞋", stock: 50 } } as never,
+      { status: "success", data: { product_id: 1 } } as never,
+      "库存改成50",
+    );
+    expect(ok).toBe(false); // 回读 stock=60 ≠ 50 → 验证失败（真实落库与目标不符）
+  });
+
+  it("off 下架：回读状态 off_sale → 通过", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[0] = { id: 1, shop_id: 1, name: "Nike 鞋", price: 299, stock: 50, status: "off_sale" };
+    const ok = await skill.verify!(
+      { user_text: "下架Nike鞋", user_ctx: vctx, intent: "catalog_off", intent_params: { name: "Nike 鞋" } } as never,
+      { status: "success", data: { product_id: 1 } } as never,
+      "下架Nike鞋",
+    );
+    expect(ok).toBe(true);
+  });
+
+  it("query 含'价格'字样：不误触发价格回读（基于意图判定）", async () => {
+    const { default: skill } = await import("../src/skills/catalog/handlers.js");
+    products[0] = { id: 1, shop_id: 1, name: "Nike 鞋", price: 259, stock: 50, status: "on_sale" };
+    const ok = await skill.verify!(
+      { user_text: "查一下Nike鞋的价格", user_ctx: vctx, intent: "catalog_query", intent_params: { name: "Nike 鞋" } } as never,
+      { status: "success", data: { product_id: 1 } } as never,
+      "查一下Nike鞋的价格",
+    );
+    expect(ok).toBe(true); // 旧实现：newText 含"价格"触发价格回读（无数字→侥幸 true）；新实现基于 intent=query 只查存在
   });
 });

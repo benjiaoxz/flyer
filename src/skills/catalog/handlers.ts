@@ -744,23 +744,29 @@ const skill: Skill = {
     }
   },
   /** P2 结果验证：上架/改价/下架后回读业务系统确认落库（执行后自证） */
-  async verify(state: GenericState, result: SkillResult, newText: string): Promise<boolean> {
-    // 查询类无需验证（只读）；验证写操作是否真实生效
+  async verify(state: GenericState, result: SkillResult, _newText: string): Promise<boolean> {
+    // 查询/批量/无单商品目标 → 无需回读（只读/多行已逐条校验）
     if (!result.data?.product_id) return true;
     const token = state.user_ctx?.token;
     if (!token) return false;
+    // 基于意图判定操作（而非 newText 正则，避免"查价格"误触发价格回读）
+    const action = state.intent.replace("catalog_", "");
     try {
       const p = await callBizApi<Product>(
         `/api/products/${result.data.product_id}`,
         "GET",
         token,
       );
-      // 回读确认：商品存在 + 关键字段与写入一致（上架=存在；改价=价格一致；下架=状态 off_sale）
-      if (newText.includes("下架")) return p.status === "off_sale";
-      if (newText.includes("改") || newText.includes("价格")) {
-        const price = newText.match(/(\d+(?:\.\d+)?)\s*(?:元|块)/);
-        return price ? Math.abs(p.price - Number(price[1])) < 0.01 : true;
+      if (action === "off") return p.status === "off_sale";
+      if (action === "update" || action === "add") {
+        // 回读确认：与写入目标逐字段比对（价格/库存/改名）
+        const params = state.intent_params ?? {};
+        if (params.price !== undefined && Math.abs(p.price - Number(params.price)) >= 0.01) return false;
+        if (params.stock !== undefined && p.stock !== Number(params.stock)) return false;
+        if (params.new_name !== undefined && p.name !== String(params.new_name)) return false;
+        return true;
       }
+      // query/add_batch 等：商品存在即可
       return p.id === Number(result.data.product_id);
     } catch (e) {
       logger.warn(`catalog 回读验证失败: ${String(e)}`);

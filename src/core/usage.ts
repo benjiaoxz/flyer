@@ -93,20 +93,28 @@ class UsageStore {
     }
     return agg;
   }
+
+  /** 全局累计 total token（不限 skill）：sqlite 从 DB 聚合，memory 遍历累加 */
+  totalAllTokens(): number {
+    if (this.db) {
+      const r = this.db
+        .prepare("SELECT COALESCE(SUM(total_tokens),0) t FROM usage_events")
+        .get() as { t: number };
+      return r.t;
+    }
+    let total = 0;
+    for (const skills of this.memory.values()) {
+      for (const s of skills.values()) total += s.total;
+    }
+    return total;
+  }
 }
 
 export const usage = new UsageStore();
 
 /** 全局累计 total token（不限 skill，用于计算执行增量） */
 export function totalAllTokens(): number {
-  const skills = new Set<string>();
-  // memory 模式遍历所有
-  for (const thread of (usage as unknown as { memory: Map<string, Map<string, UsageAgg>> }).memory?.values() ?? []) {
-    for (const skillId of thread.keys()) skills.add(skillId);
-  }
-  let total = 0;
-  for (const s of skills) total += usage.skillUsage(s).total;
-  return total;
+  return usage.totalAllTokens();
 }
 
 /** 读指定 thread+skill 的当前累计 total token（用于计算执行增量） */

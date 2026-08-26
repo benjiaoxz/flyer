@@ -108,3 +108,34 @@ describe("/api/chat multipart（表格+文字一次打包）", () => {
     expect(body.output).toContain("table=[]");
   });
 });
+
+describe("/api/upload 路由", () => {
+  it("none 模式：匿名上传 → 401（上传需要真实用户身份）", async () => {
+    const form = new FormData();
+    form.append("file", new Blob(["a,b\n1,2"], { type: "text/csv" }), "表.csv");
+    const res = await fetch(`${base}/api/upload`, { method: "POST", body: form });
+    expect(res.status).toBe(401);
+  });
+
+  it("api_key 模式：带有效 key 上传 → 返回 file_id", async () => {
+    const { config } = await import("../src/core/config.js");
+    config.authMode = "api_key";
+    config.apiKeys = ["test-key-1"];
+    const agent = new Agent();
+    agent.registry.register(new TableSkill());
+    const app2 = buildApi(agent);
+    await app2.listen({ port: 0 });
+    const base2 = `http://127.0.0.1:${(app2.server.address() as { port: number }).port}`;
+    const form = new FormData();
+    form.append("file", new Blob(["a,b\n1,2"], { type: "text/csv" }), "表.csv");
+    const res = await fetch(`${base2}/api/upload`, {
+      method: "POST",
+      headers: { Authorization: "Bearer test-key-1" },
+      body: form,
+    });
+    const body = (await res.json()) as { file_id?: string; detail?: string };
+    expect(res.status).toBe(200);
+    expect(body.file_id).toBeTruthy();
+    await app2.close();
+  });
+});

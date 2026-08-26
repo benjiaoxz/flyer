@@ -91,7 +91,7 @@ describe("API 鉴权闭环", () => {
     const agent3 = new Agent();
     agent3.registry.register(new OrderSkill());
     const app3 = buildApi(agent3);
-    const srv3 = await app3.listen({ port: 0 });
+    await app3.listen({ port: 0 });
     const token = await issueToken({ sub: "2", role: "merchant", skills: ["order"], scopes: ["shop:1"] });
     const res = await fetch(`http://127.0.0.1:${(app3.server.address() as { port: number }).port}/api/chat`, {
       method: "POST",
@@ -108,7 +108,7 @@ describe("API 鉴权闭环", () => {
     const agent2 = new Agent();
     agent2.registry.register(new SecretSkill());
     const app2 = buildApi(agent2);
-    const srv2 = await app2.listen({ port: 0 });
+    await app2.listen({ port: 0 });
     const res = await fetch(`http://127.0.0.1:${(app2.server.address() as { port: number }).port}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

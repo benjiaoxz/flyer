@@ -9,7 +9,7 @@ const statsMap = new Map<string, Array<{ label: string; value: number }>>();
 
 beforeEach(() => {
   statsMap.clear();
-  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+  fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
     const full = String(url);
     if (!full.includes("/api/stats")) {
       return { ok: false, json: async () => ({ detail: "not found" }) } as Response;
@@ -30,6 +30,7 @@ afterEach(() => {
 });
 
 async function run(text: string, intent: string, extra: Record<string, unknown> = {}) {
+  void intent;
   const { default: skill } = await import("../src/skills/report/handlers.js");
   const state = {
     user_text: text,

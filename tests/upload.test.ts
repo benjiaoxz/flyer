@@ -6,11 +6,13 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import * as XLSX from "xlsx";
+
 import { buildApi } from "../src/api/server.js";
 import { Agent } from "../src/core/agent.js";
 import { config } from "../src/core/config.js";
 import { BaseSkill } from "../src/core/registry.js";
-import type { SkillManifest, SkillResult } from "../src/types/index.js";
+import type { GenericState, SkillManifest, SkillResult } from "../src/types/index.js";
 
 // 表格技能：直接把收到的 text/table 回显（验证网关区分）
 class TableSkill extends BaseSkill {
@@ -19,7 +21,7 @@ class TableSkill extends BaseSkill {
     intents: ["new_request", "table_do", "catalog_add_batch"], // 无文字+表格 → 确定性路由 add_batch
     trigger_keywords: ["表格", "批量", "上架", "调整"],
   };
-  handle(state: any): SkillResult {
+  handle(state: GenericState): SkillResult {
     return {
       status: "success",
       output: `text=[${state.user_text}]|table=[${state.table_text ?? ""}]`,
@@ -29,7 +31,7 @@ class TableSkill extends BaseSkill {
 }
 
 let base = "";
-let app: any;
+let app: ReturnType<typeof buildApi>;
 
 beforeAll(async () => {
   config.authMode = "none"; // 测试免鉴权（表格解析不依赖文件存储）
@@ -46,6 +48,7 @@ afterAll(async () => {
 
 async function multipartChat(fields: Record<string, string>, file?: { name: string; content: string | Uint8Array; type: string }) {
   const form = new FormData();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Blob 是浏览器 API，Node 类型无 BlobPart
   if (file) form.append("file", new Blob([file.content as any], { type: file.type }), file.name);
   for (const [k, v] of Object.entries(fields)) form.append(k, v);
   const res = await fetch(`${base}/api/chat`, { method: "POST", body: form });
@@ -65,7 +68,6 @@ describe("/api/chat multipart（表格+文字一次打包）", () => {
 
   it("Excel 文件 → 解析为 CSV 表格文本", async () => {
     // 用 xlsx 包生成真实 xlsx buffer
-    const XLSX = require("xlsx") as typeof import("xlsx");
     const ws = XLSX.utils.aoa_to_sheet([["名称", "价格"], ["鞋X", 300]]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Sheet1");

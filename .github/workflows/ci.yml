@@ -1,0 +1,28 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 2 * * 1"   # 每周一凌晨：定时健康审计（趋势防退化）
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 类型检查
+        run: npm run typecheck
+      - name: 单元测试
+        run: npm test
+      - name: 覆盖率门禁（≥80%）
+        run: npm run test:coverage
+      - name: Lint
+        run: npm run lint
+      - name: 健康审计（含 npm audit）
+        run: npm run health:ci

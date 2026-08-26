@@ -1,5 +1,5 @@
 /** Agent 核心测试：三节点流程 + 意图路由 + 用户隔离 */
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { Agent } from "../src/core/agent.js";
 import { BaseSkill } from "../src/core/registry.js";
@@ -97,8 +97,9 @@ describe("结果契约（M3）", () => {
       id: "badcontract", name: "坏契约", description: "返回不合规",
       intents: ["new_request", "bc_do"], max_turns_per_session: 5,
     };
-    handle(): any {
-      return { output: "忘了标 status" };  // 故意违反契约
+    handle(): SkillResult {
+      // 故意返回不合规对象（缺 status），运行时被 zod 契约校验拦截
+      return { output: "忘了标 status" } as unknown as SkillResult;
     }
   }
 

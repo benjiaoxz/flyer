@@ -7,7 +7,7 @@ export interface Embedder {
   embed(text: string): Promise<number[] | null>;
 }
 
-class OllamaEmbedder implements Embedder {
+export class OllamaEmbedder implements Embedder {
   constructor(private url: string, private model: string) {}
   name(): string {
     return `ollama:${this.model}`;
@@ -28,7 +28,7 @@ class OllamaEmbedder implements Embedder {
   }
 }
 
-class CloudEmbedder implements Embedder {
+export class CloudEmbedder implements Embedder {
   constructor(private apiKey: string, private model: string, private baseUrl: string) {}
   name(): string {
     return `cloud:${this.model}`;

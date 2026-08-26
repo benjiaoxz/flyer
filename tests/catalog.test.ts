@@ -1,6 +1,8 @@
 /** catalog 技能测试：上架/查询/改价/下架（mock 业务系统 API） */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as XLSX from "xlsx";
+
 import { config } from "../src/core/config.js";
 import type { GenericState, IntentResult } from "../src/types/index.js";
 
@@ -11,7 +13,6 @@ vi.mock("../src/api/server.js", async (importOriginal) => {
     ...mod,
     getLatestUpload: () => "test-file",
     readUploadFile: () => {
-      const XLSX = require("xlsx") as typeof import("xlsx");
       const ws = XLSX.utils.aoa_to_sheet([["名称", "价格", "库存"], ["上传鞋A", 300, 30]]);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
@@ -647,7 +648,6 @@ describe("catalog 表格附件（table_text 一次打包）", () => {
 describe("catalog 上传文件批量上架", () => {
   it("读上传的 Excel → 批量上架", async () => {
     const { default: skill } = await import("../src/skills/catalog/handlers.js");
-    const before = products.length;
     const r = await skill.handle(
       { user_text: "用刚才上传的表格批量上架", user_ctx: { user_id: "2", role: "merchant", allowed_skills: ["catalog"], data_scopes: ["shop:1"], token: "t", shop_id: 1 } } as never,
       { intent: "catalog_add_batch", params: {} } as never,
@@ -660,7 +660,6 @@ describe("catalog 上传文件批量上架", () => {
 
   it("Excel 表头不在第一行（标题行/合并单元格）→ 仍能定位表头并批量上架", async () => {
     const { parseExcelFile } = await import("../src/tools/excel.js");
-    const XLSX = require("xlsx") as typeof import("xlsx");
     // 模拟用户真实表格：第一行是标题"表格 1"，第二行才是表头（名称/价格/库存/状态）
     const ws = XLSX.utils.aoa_to_sheet([
       ["表格 1"],

@@ -1,8 +1,7 @@
 /** 语义缓存测试 */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { cosineSimilarity, SemanticCache } from "../src/core/cache.js";
-import { getEmbedder } from "../src/core/embedding.js";
 
 // mock embedder：确定性向量
 vi.mock("../src/core/embedding.js", async (importOriginal) => {

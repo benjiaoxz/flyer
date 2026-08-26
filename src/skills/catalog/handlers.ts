@@ -41,14 +41,6 @@ interface Product {
   status: string;
 }
 
-interface ProductCreate {
-  shop_id: number;
-  name: string;
-  price: number;
-  stock: number;
-  description?: string;
-}
-
 // ---------------------------------------------------------------- 技能
 const manifest: SkillManifest = {
   id: "catalog",

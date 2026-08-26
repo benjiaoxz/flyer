@@ -1,7 +1,6 @@
 /** embedding 召回测试：关键词零命中时用语义相似度兜底 */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { IntentRecognizer } from "../src/core/intent.js";
 import { BaseSkill } from "../src/core/registry.js";
 import type { SkillManifest, SkillResult } from "../src/types/index.js";
 

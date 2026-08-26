@@ -1,7 +1,7 @@
 /** 对话 Agent 主流程（LangGraph JS 三节点：intent → dispatch → remember）
  * 
  */
-import { Annotation, Command, END, StateGraph, interrupt } from "@langchain/langgraph";
+import { Annotation, Command, END, StateGraph } from "@langchain/langgraph";
 import { MemorySaver } from "@langchain/langgraph-checkpoint";
 import { randomUUID } from "node:crypto";
 
@@ -11,7 +11,7 @@ import { totalAllTokens, usage } from "./usage.js";
 import { IntentRecognizer } from "./intent.js";
 import { logger } from "./log.js";
 import { SkillRegistry } from "./registry.js";
-import { SkillResultSchema, type GenericState, type IntentResult, type SkillResult, type UserContext } from "../types/index.js";
+import { SkillResultSchema, type GenericState, type SkillResult, type UserContext } from "../types/index.js";
 
 // LangGraph state 字段定义（reducer 显式标注类型，v1 需要）
 const State = Annotation.Root({
@@ -45,7 +45,8 @@ type Snapshot = GenericState & { __next?: string[] };
 export class Agent {
   readonly registry: SkillRegistry;
   private recognizer: IntentRecognizer;
-  private graph: any;  // CompiledStateGraph（langgraph v1 泛型复杂，运行时安全）
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- CompiledStateGraph（langgraph v1 泛型复杂，运行时安全）
+  private graph: any;
 
   constructor(registry?: SkillRegistry, checkpointer?: unknown) {
     this.registry = registry ?? new SkillRegistry();

@@ -8,7 +8,6 @@ import { dirname } from "node:path";
 
 import { config } from "./config.js";
 import { embedText, getEmbedder } from "./embedding.js";
-import { logger } from "./log.js";
 
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (!a.length || !b.length || a.length !== b.length) return 0;

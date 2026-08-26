@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Agent } from "../src/core/agent.js";
 import { getCache } from "../src/core/cache.js";
 import { BaseSkill } from "../src/core/registry.js";
-import type { SkillManifest, SkillResult } from "../src/types/index.js";
+import type { GenericState, SkillManifest, SkillResult } from "../src/types/index.js";
 
 // mock embedder：固定向量使语义缓存生效（cosine=1 ≥ 阈值）
 vi.mock("../src/core/embedding.js", async (importOriginal) => {
@@ -22,7 +22,7 @@ class EchoSkill extends BaseSkill {
     id: "echo", name: "回声", description: "返回用户 id（检测缓存是否跨用户）",
     intents: ["new_request"], max_turns_per_session: 5,
   };
-  handle(state: any): SkillResult {
+  handle(state: GenericState): SkillResult {
     return { status: "success", output: `echo-${state.user_id}`, data: {} };
   }
 }

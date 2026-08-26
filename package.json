@@ -12,7 +12,11 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "prepare": "husky",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm test",
+    "health": "tsx scripts/health-audit.ts",
+    "health:ci": "CI=true tsx scripts/health-audit.ts",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint . --max-warnings=20"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",
@@ -32,9 +36,12 @@
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^26.2.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "eslint": "^10.9.1",
     "husky": "^9.1.7",
     "tsx": "^4.23.12",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0",
     "vitest": "^4.1.11"
   }
 }

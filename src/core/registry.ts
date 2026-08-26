@@ -1,5 +1,5 @@
 /** 技能注册表（） */
-import type { Skill, SkillManifest } from "../types/index.js";
+import type { GenericState, IntentResult, Skill, SkillManifest, SkillResult } from "../types/index.js";
 import { logger } from "./log.js";
 
 export class SkillRegistry {
@@ -33,5 +33,5 @@ export class SkillRegistry {
 /** Skill 基类辅助（manifest 从 yaml 加载或传入） */
 export abstract class BaseSkill implements Skill {
   abstract readonly manifest: SkillManifest;
-  abstract handle(state: any, intent: any, newText: string): any;
+  abstract handle(state: GenericState, intent: IntentResult, newText: string): SkillResult | Promise<SkillResult>;
 }

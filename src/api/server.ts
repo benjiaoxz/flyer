@@ -32,6 +32,7 @@ export function buildApi(agent: Agent) {
   app.get("/health", async () => ({ status: "ok" }));
 
   // 鉴权中间件：none / api_key / jwt
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify 插件装饰（multipart）的 handler 类型
   async function authorize(req: any): Promise<string | UserContext> {
     if (config.authMode === "none") return "anonymous";
     if (config.authMode === "jwt") {
@@ -49,6 +50,7 @@ export function buildApi(agent: Agent) {
     return key;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify 插件装饰（isMultipart/parts）
   app.post("/api/chat", async (req: any, reply) => {
     const caller = await authorize(req);
     const callerUserId = typeof caller === "string" ? caller : (caller.user_id ?? "");
@@ -215,7 +217,9 @@ function tableToCsv(buf: Buffer, filename: string): string {
   ].join("\n");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify 插件装饰（multipart）的 handler 类型
 function registerUpload(app: any, authorize: (req: any) => Promise<string | UserContext>) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Fastify 插件装饰（multipart）的 handler 类型
   app.post("/api/upload", async (req: any, reply: any) => {
     // JWT 鉴权（复用 authorize 的 UserContext 取 user_id）
     const caller = await authorize(req);

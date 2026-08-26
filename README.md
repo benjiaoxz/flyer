@@ -37,7 +37,7 @@ npm run api                 # 启动 Fastify API（默认 8099）
 ```
 
 ```bash
-npm test                    # 100 个测试（vitest）
+npm test                    # 111 个测试（vitest）
 ```
 
 > **开发环境**：网关开发与测试不依赖任何外部服务——技能单元测试全部 mock（`AGENT_DRY_RUN` 下无需 LLM key）。

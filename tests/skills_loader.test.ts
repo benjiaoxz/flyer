@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { SkillRegistry } from "../src/core/registry.js";
-import type { Skill } from "../src/types/index.js";
+import type { SkillManifest } from "../src/types/index.js";
 
 let skillsDir = "";
-let loadSkillManifest: any;
-let scanSkills: any;
+let loadSkillManifest: (id: string) => SkillManifest | null;
+let scanSkills: (r: SkillRegistry) => Promise<number>;
 
 beforeAll(async () => {
   skillsDir = join(tmpdir(), `flyer-skills-${Date.now()}`);

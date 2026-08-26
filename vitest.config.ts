@@ -9,5 +9,15 @@ export default defineConfig({
       AGENT_DRY_RUN: "true",
       EMBEDDING_PROVIDER: "",
     },
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.ts"],
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        statements: 80,
+        branches: 70,
+      },
+    },
   },
 });

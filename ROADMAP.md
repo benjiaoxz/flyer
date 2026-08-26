@@ -132,6 +132,7 @@
 | PgVectorStore（pgvector） | 多副本/集群，需共享缓存（sqlite 单机够用） | 实现同接口类，`VECTOR_STORE=pgvector` 切换；复用业务 Postgres |
 | 跨会话长期记忆 | 需要用户画像/全局知识 | LangGraph Store（InMemory→Postgres），`compile(store=)` |
 | 历史摘要/向量 | 窗口丢信息成痛点 | 预留接口 |
+| 查询式库存预警（能力预演） | 运营要"哪些库存低于X"即时问答 | 网关查询技能形态：LLM 抽阈值 → 参数化调业务系统库存接口（`stock_max` 过滤）→ 返回低库存清单（分级/CSV 导出）。只读、不进缓存；规则与定时执行归业务系统侧，网关仅做对话入口与参数化调用 |
 
 ---
 

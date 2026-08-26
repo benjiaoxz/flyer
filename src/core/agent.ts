@@ -101,10 +101,12 @@ export class Agent {
       // 简化：技能数据域需在用户域内（示例）
     }
 
-    // 语义缓存：仅可缓存意图命中（写操作跳过，防返回过期结果）；失败不存缓存防固化
+    // 语义缓存：仅可缓存意图命中（写操作跳过，防返回过期结果）；失败不存缓存防固化。
+    // namespace 含用户维度：缓存结果按用户隔离，防跨用户数据泄露（A 的查询命中给 B）
     const cacheable = !manifest.cacheable_intents || manifest.cacheable_intents.includes(s.intent);
+    const cacheNs = `${s.user_id || "anon"}:${manifest.id}`;
     const cached = cacheable
-      ? await getCache().tryGet(s.user_text, manifest.id, config.cacheBusting)
+      ? await getCache().tryGet(s.user_text, cacheNs, config.cacheBusting)
       : null;
     if (cached) {
       usage.recordCacheHit("-", manifest.id, cached.saved_tokens);
@@ -113,7 +115,7 @@ export class Agent {
         `[缓存命中] 技能 ${manifest.id} 直接返回缓存结果（本次省 ${cached.saved_tokens} tokens，累计命中 ${agg.cache_hits} 次，累计省 ${agg.saved_tokens} tokens）`,
       );
       this.recordTaskStep(task, `execute:${manifest.id}`, "success", "cache_hit");
-      return { output: String(cached.result), output_type: "text", last_skill: manifest.id, task };
+      return { output: String(cached.result), output_type: "text", data: {}, last_skill: manifest.id, task };
     }
 
     // 执行技能（结果契约：SkillResult 校验；异常视为 error 不崩）
@@ -169,7 +171,7 @@ export class Agent {
         // 缓存成本估算：本次执行消耗的 token（执行后累计 - 执行前基线）
         const tokensAfter = totalAllTokens();
         const savedTokens = Math.max(0, tokensAfter - tokensBefore);
-        await getCache().save(s.user_text, updates.output, manifest.id, config.cacheBusting, savedTokens);
+        await getCache().save(s.user_text, updates.output, cacheNs, config.cacheBusting, savedTokens);
       }
     }
     return {

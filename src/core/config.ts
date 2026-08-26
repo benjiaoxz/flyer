@@ -39,13 +39,19 @@ function env(name: string, def = ""): string {
   return process.env[name] ?? def;
 }
 
+/** 数值环境变量：非法值回退默认（防 NaN 传染） */
+function envNum(name: string, def: number): number {
+  const n = Number(process.env[name]);
+  return Number.isNaN(n) || process.env[name] === undefined ? def : n;
+}
+
 export const config: Config = {
   appName: env("APP_NAME", "flyer"),
   dryRun: (env("AGENT_DRY_RUN", "false") || "").toLowerCase() === "true",
   llmApiKey: env("LLM_API_KEY") || env("DEEPSEEK_API_KEY"),
   llmModel: env("LLM_MODEL", "deepseek-chat"),
   llmBaseUrl: env("LLM_BASE_URL", "https://api.deepseek.com"),
-  contextWindowRounds: Number(env("CONTEXT_WINDOW_ROUNDS", "3")),
+  contextWindowRounds: envNum("CONTEXT_WINDOW_ROUNDS", 3),
 
   authMode: (env("AUTH_MODE", "none") as Config["authMode"]),
   apiKeys: env("API_KEYS", "").split(",").filter(Boolean),
@@ -54,15 +60,15 @@ export const config: Config = {
 
   vectorStore: (env("VECTOR_STORE", "memory") as Config["vectorStore"]),
   vectorDbPath: env("VECTOR_DB_PATH", "data/cache.db"),
-  cacheThreshold: Number(env("CACHE_THRESHOLD", "0.9")),
+  cacheThreshold: envNum("CACHE_THRESHOLD", 0.9),
   cacheBusting: env("CACHE_BUSTING", "1"),
   usageStore: (env("USAGE_STORE", "memory") as Config["usageStore"]),
   usageDbPath: env("USAGE_DB_PATH", "data/usage.db"),
   checkpointer: (env("CHECKPOINTER", "memory") as Config["checkpointer"]),
   checkpointDbPath: env("CHECKPOINT_DB_PATH", "data/agent_checkpoints.db"),
 
-  embeddingProvider: (env("EMBEDDING_PROVIDER", "") as Config["embeddingProvider"] || "none"),
-  recallThreshold: Number(env("RECALL_THRESHOLD", "0.75")),
+  embeddingProvider: (env("EMBEDDING_PROVIDER", "") || "none") as Config["embeddingProvider"],
+  recallThreshold: envNum("RECALL_THRESHOLD", 0.75),
   embeddingModel: env("EMBEDDING_MODEL", "bge-m3:567m"),
   embeddingOllamaUrl: env("EMBEDDING_OLLAMA_URL", "http://localhost:11434"),
   embeddingCloudApiKey: env("EMBEDDING_CLOUD_API_KEY"),

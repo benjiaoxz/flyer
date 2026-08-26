@@ -37,7 +37,7 @@ flowchart TD
     CF --> I[intent 意图识别<br/>历史感知 + LLM 结构化<br/>只注入候选技能意图]
     I --> R{dispatch 技能路由}
     R -->|无技能| FB[fallback 通用回复]
-    R -->|命中技能| B[SkillBoundary 强制<br/>用户隔离/轮数/token 预算/白名单/高危闸门]
+    R -->|命中技能| B[SkillBoundary<br/>用户隔离/技能白名单 ✅<br/>轮数/token 预算/数据域/高危闸门 规划中]
     B --> C{语义缓存查询<br/>embedding 相似度}
     C -->|命中| OUT2([直接返回缓存结果<br/>省技能执行与 LLM])
     C -->|未命中| H[技能 handle<br/>（业务逻辑，外部提供）]
@@ -98,18 +98,18 @@ sequenceDiagram
 
 | 模块 | 职责 | 状态 |
 |---|---|---|
-| `src/core/agent.ts` | 对话引擎：intent→dispatch→remember 三节点 + interrupt + 交互接口（LangGraph JS） | ✅ 已实现 |
+| `src/core/agent.ts` | 对话引擎：intent→dispatch→remember 三节点 + 交互接口（LangGraph JS）；interrupt 追问/确认闸门规划中 | ✅ 已实现（追问/闸门未接入） |
 | `src/core/intent.ts` | 意图识别：LLM 结构化输出 + 规则兜底（历史感知）+ 关键词预筛（trigger_keywords 缩小注入清单） | ✅ 已实现 |
 | `src/core/registry.ts` | 技能注册表：意图→技能映射；Skill 基类 | ✅ 已实现 |
 | `src/core/skills_loader.ts` | 技能包机制：扫描 src/skills/ 自动注册 + skill.yaml manifest 解析（仓库即规范） | ✅ 已实现 |
 | `src/core/config.ts` | 框架配置（.env，pydantic→TS 手写） | ✅ 已实现 |
 | `src/core/usage.ts` | token 用量记录 + 缓存命中审计（memory/sqlite） | ✅ 已实现 |
 | `src/core/cache.ts` | 语义缓存（可插拔 embedding：ollama/cloud；向量存储 memory/sqlite；仅成功结果入缓存） | ✅ 已实现 |
-| `src/core/security.ts` | JWT 断言鉴权（jose RS256）→ UserContext（角色/技能白名单/数据域） | ✅ 已实现 |
+| `src/core/security.ts` | JWT 断言鉴权（jose RS256）→ UserContext（角色/技能白名单）；数据域交集校验规划中 | ✅ 已实现（数据域未接入） |
 | `src/core/embedding.ts` | embedding 层（ollama/cloud 可插拔） | ✅ 已实现 |
 | `src/core/log.ts` | JSON 日志 | ✅ 已实现 |
 | `src/types/index.ts` | GenericState / SkillResult（zod）/ SkillManifest / UserContext | ✅ 已实现 |
-| `src/api/server.ts` | Fastify API：/health /api/chat /api/resume /api/usage，jwt/api_key/none 鉴权 | ✅ 已实现 |
+| `src/api/server.ts` | Fastify API：/health /api/chat /api/resume /api/usage /api/upload，jwt/api_key/none 鉴权 | ✅ 已实现 |
 
 ## 5. 设计原则（决策记录）
 

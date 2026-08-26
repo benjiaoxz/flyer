@@ -1,6 +1,4 @@
-/** API 服务（Fastify）：/health /api/chat /api/resume /api/usage /api/failures
- * 
- */
+/** API 服务（Fastify）：/health /api/chat /api/resume /api/usage /api/upload */
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
@@ -65,7 +63,7 @@ export function buildApi(agent: Agent) {
         if (part.type === "file") {
           const buf = await part.toBuffer();
           if (callerUserId && callerUserId !== "anonymous") {
-            const fileId = `${Date.now()}-${randomUUID().slice(0, 8)}${part.filename}`;
+            const fileId = `${Date.now()}-${randomUUID().slice(0, 8)}${basename(String(part.filename ?? "upload"))}`;
             writeFileSync(join(UPLOAD_DIR, fileId), buf);
             userUploads.set(callerUserId, fileId);
             logger.info(`[对话附件] ${part.filename} (${buf.length} bytes, user=${callerUserId})`);
@@ -175,7 +173,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 
 const UPLOAD_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "data", "uploads");
 
@@ -227,7 +225,8 @@ function registerUpload(app: any, authorize: (req: any) => Promise<string | User
     }
     const file = await req.file();
     if (!file) return reply.status(400).send({ detail: "缺少文件" });
-    const fileId = `${Date.now()}-${randomUUID().slice(0, 8)}${file.filename}`;
+    const safeName = basename(String(file.filename ?? "upload"));  // 防路径穿越（../ 注入）
+    const fileId = `${Date.now()}-${randomUUID().slice(0, 8)}${safeName}`;
     const buf = await file.toBuffer();
     writeFileSync(join(UPLOAD_DIR, fileId), buf);
     userUploads.set(userId, fileId);

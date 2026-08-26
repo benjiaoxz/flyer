@@ -4,6 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { config } from "../src/core/config.js";
 import type { GenericState, IntentResult } from "../src/types/index.js";
 
+// 顶层 mock：读上传文件（vitest 要求 vi.mock 在模块顶层，否则未来版本报错）
+vi.mock("../src/api/server.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../src/api/server.js")>();
+  return {
+    ...mod,
+    getLatestUpload: () => "test-file",
+    readUploadFile: () => {
+      const XLSX = require("xlsx") as typeof import("xlsx");
+      const ws = XLSX.utils.aoa_to_sheet([["名称", "价格", "库存"], ["上传鞋A", 300, 30]]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+      return XLSX.write(wb, { type: "buffer" }) as Buffer;
+    },
+  };
+});
+
 let fetchMock: ReturnType<typeof vi.fn>;
 let products: Array<{ id: number; shop_id: number; name: string; price: number; stock: number; status: string }>;
 
@@ -623,21 +639,6 @@ describe("catalog 表格附件（table_text 一次打包）", () => {
 
 describe("catalog 上传文件批量上架", () => {
   it("读上传的 Excel → 批量上架", async () => {
-    // mock api/server 的 getLatestUpload/readUploadFile
-    vi.mock("../src/api/server.js", async (importOriginal) => {
-      const mod = await importOriginal<typeof import("../src/api/server.js")>();
-      return {
-        ...mod,
-        getLatestUpload: () => "test-file",
-        readUploadFile: () => {
-          const XLSX = require("xlsx") as typeof import("xlsx");
-          const ws = XLSX.utils.aoa_to_sheet([["名称", "价格", "库存"], ["上传鞋A", 300, 30]]);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-          return XLSX.write(wb, { type: "buffer" }) as Buffer;
-        },
-      };
-    });
     const { default: skill } = await import("../src/skills/catalog/handlers.js");
     const before = products.length;
     const r = await skill.handle(

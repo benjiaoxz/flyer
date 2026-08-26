@@ -10,7 +10,7 @@
 | M1 core 基础 | 引擎/意图/记忆/持久化/日志/示例技能 | ✅ 完成 |
 | M2 数据接入 | Agent 连数据库（示例）+ mock 测试 | ✅ 完成 |
 | M3 资源边界 | 用量记录/单次控制/配额/技能策略/语义缓存（token 治理） | ✅ 完成 |
-| M4 安全边界 | 数据/工具白名单 + 高危闸门 + 审计报表 + API 鉴权/限流（权限） | ✅ 完成 |
+| M4 安全边界 | 白名单/审计/API 鉴权 ✅；高危闸门/限流/数据域 ⬜ 未实现 | ⚠️ 部分 |
 | M5 演进预留 | 子图/Store/摘要向量 | ⬜ 按需 |
 
 > 主线心智模型：**技能通过一个 manifest 声明"能花多少 / 能碰什么 / 什么要批准"**，core 强制执行。
@@ -29,11 +29,12 @@
 ### P1 语义缓存 + 会话级配额（框架价值大）
 - [x] **语义缓存**（src/core/cache.ts + src/core/embedding.ts）：可插拔 embedding（ollama/cloud），命中跳过 LLM，busting 失效
 - [x] **向量存储可插拔**（`VECTOR_STORE`）：memory（默认）/ sqlite（落盘，跨进程/重启保留）/ pgvector（生产预留）
-- [x] **会话配额**：轮数上限 + token 预算，超限强制拒绝/告警
+- [ ] **会话配额**：轮数上限 + token 预算，超限强制拒绝/告警（**当前未实现**：turns 仅累加，dispatch 无上限校验）
 
 ### P2 技能资源策略（机制入框架）
 - [x] manifest 增加：`session_mode`/`max_llm_calls_per_turn`/`data_scopes`/`tools`/`requires_confirmation`
-- [x] core 按 manifest 校验：轮数/预算/白名单/闸门（dispatch 拦截器）
+- [x] core 按 manifest 校验：**技能白名单**（dispatch 拦截器）
+- [ ] core 按 manifest 校验：轮数/预算/确认闸门（**当前未实现**）
 - [x] 补充：single 模式意图识别不喂历史（src/core/intent.ts）；每轮 LLM 调用数计数接入 dispatch（src/core/agent.ts）
 - [x] 业务技能外部提供（catalog 商品管理技能已实现，对接业务系统 API）
 
@@ -50,11 +51,13 @@
 ## M4：安全边界（权限，与 M3 合为 SkillBoundary）
 
 - [x] **API 鉴权**：Bearer API Key / JWT 断言（`AUTH_MODE=api_key/jwt`，src/core/security.ts）
-- [x] **限流**：按调用方身份内存滑窗（`RATE_LIMIT_PER_MINUTE`，多副本可升级 Redis/PG）
-- [x] **数据/工具白名单**：`data_scopes`/`tools` 已实现，工具/数据层运行时拦截
-- [x] **高危操作闸门**：`requires_confirmation` + `confirmation_after`，interrupt 确认（已实现）
+- [ ] **限流**：按调用方身份内存滑窗（`RATE_LIMIT_PER_MINUTE`）——**当前未实现**，API.md 已如实标注规划中
+- [x] **技能白名单**：`allowed_skills`（JWT 断言）运行时拦截
+- [ ] **数据/工具白名单**：`data_scopes`/`tools`——**当前未实现**（manifest 字段已声明，无运行时拦截）
+- [ ] **高危操作闸门**：`requires_confirmation` + `confirmation_after` + interrupt 确认——**当前未实现**（manifest 字段已声明，dispatch 未接入）
 - [x] **边界校验告警**：校验失败 = 日志 + 告警
-- [x] **用户隔离**：用户上下文（JWT 断言）按用户裁剪技能/数据域
+- [x] **用户隔离**：JWT 断言按用户裁剪技能白名单
+- [ ] **用户隔离数据域**：`data_scopes` 交集校验——**当前为空实现**
 - [x] **审计报表**：`GET /api/usage` 按技能/会话汇总用量（拦截记录有日志告警）
 - [ ] 用户体系/角色：**归业务方**，框架只留接入点（user_id 透传已有）
 

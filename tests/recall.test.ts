@@ -5,6 +5,21 @@ import { IntentRecognizer } from "../src/core/intent.js";
 import { BaseSkill } from "../src/core/registry.js";
 import type { SkillManifest, SkillResult } from "../src/types/index.js";
 
+// 顶层 mock（vitest 要求 vi.mock 在模块顶层）：
+// 技能代表向量 = [1,0,0]；用户输入"帮我调一下跑步鞋库存"语义相近 [0.99,...]；无关输入 = [0,1,0]
+vi.mock("../src/core/embedding.js", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("../src/core/embedding.js")>();
+  return {
+    ...mod,
+    embedText: async (t: string) => {
+      if (t.includes("商品管理") || t.includes("上架")) return [1, 0, 0];
+      if (t.includes("帮我调一下跑步鞋库存")) return [0.99, 0.01, 0];
+      if (t.includes("今天天气怎么样")) return [0, 1, 0];
+      return null;
+    },
+  };
+});
+
 // 有 trigger_keywords 但用户输入不含它们的技能
 class CatalogSkill extends BaseSkill {
   readonly manifest: SkillManifest = {
@@ -18,22 +33,7 @@ class CatalogSkill extends BaseSkill {
 }
 
 describe("embedding 召回", () => {
-  beforeEach(() => {
-    // 技能代表向量 = [1,0,0]；用户输入"帮我调一下跑步鞋库存"语义相近 [0.99,...]；
-    // 无关输入 = [0,1,0]
-    vi.mock("../src/core/embedding.js", async (importOriginal) => {
-      const mod = await importOriginal<typeof import("../src/core/embedding.js")>();
-      return {
-        ...mod,
-        embedText: async (t: string) => {
-          if (t.includes("商品管理") || t.includes("上架")) return [1, 0, 0];
-          if (t.includes("帮我调一下跑步鞋库存")) return [0.99, 0.01, 0];
-          if (t.includes("今天天气怎么样")) return [0, 1, 0];
-          return null;
-        },
-      };
-    });
-  });
+  // （embedding mock 已提升到模块顶层）
 
   afterEach(() => {
     vi.resetModules();

@@ -7,8 +7,9 @@
 
 | 方法 | 路径 | 用途 |
 |---|---|---|
-| POST | `/api/chat` | 发起一轮对话（任意技能） |
-| POST | `/api/resume` | 提交用户对追问的回答 |
+| POST | `/api/chat` | 发起一轮对话（任意技能；支持 multipart 表格附件） |
+| POST | `/api/resume` | 提交用户对追问的回答（追问机制规划中，见 §4.1） |
+| POST | `/api/upload` | 上传表格文件（Excel/CSV，用户维度暂存，供技能读取） |
 | GET | `/health` | 健康检查 |
 | GET | `/api/usage` | 审计报表：token 用量汇总（按技能/会话/全量） |
 
@@ -25,9 +26,8 @@ POST /api/chat {text, thread_id}
   → status="result"      → 展示 output + data
 ```
 
-- 需要澄清/补充信息时返回 `need_input`（最多 2 轮）
-- 用户可跳过回答（answer 传空串）→ Agent 达上限后强制继续，不卡住
-- **同一会话始终传同一个 `thread_id`**（Agent 通过 Checkpointer 记住上下文）
+- **追问机制（need_input/resume）规划中，当前版本恒返回 `result`**——需要澄清时技能直接返回 error/提示，不进入追问循环
+- **同一会话始终传同一个 `thread_id`**（Agent 通过 Checkpointer 记住上下文；`CHECKPOINTER=sqlite` 时崩溃/重启可恢复）
 
 ## 3. 接口详情
 
@@ -79,8 +79,8 @@ POST /api/chat {text, thread_id}
 
 ### 4.1 交互状态机
 ```
-chat(text) → need_input → 展示问题 → resume(answer) → need_input(循环) | result
-          → result → 渲染 output + data
+chat(text) → result → 渲染 output + data
+（need_input → resume 追问流程规划中，当前恒 result）
 ```
 
 ### 4.2 技能数据展示
@@ -93,13 +93,13 @@ chat(text) → need_input → 展示问题 → resume(answer) → need_input(循
 - CORS 已配置（`CORS_ORIGINS`，开发期 `*`）
 
 ### 4.4 鉴权（AUTH_MODE）
-- 开发默认 `AUTH_MODE=none`（不校验）；生产设 `AUTH_MODE=api_key` + `API_KEYS=sk-xxx,...`
-- 请求头携带：`Authorization: Bearer <你的 Key>`
-- 无/错误 Key → `401`；`/health` 始终开放
+- `none`（默认）：不校验，`/api/chat` 返回匿名身份
+- `api_key`：请求头 `Authorization: Bearer <API_KEYS 之一>`，无/错误 → `401`
+- `jwt`：业务系统签发的 RS256 JWT（payload 含 sub/role/skills/scopes/shop_id，见 docs/ChatBI.md §2.2），验证通过注入 UserContext（技能白名单裁剪）
+- `/health` 始终开放；`/api/upload` 在 `none` 模式下要求真实用户身份（401）
 
-### 4.5 限流（RATE_LIMIT_PER_MINUTE）
-- 按调用方身份限流（默认 60 次/分钟，`RATE_LIMIT_PER_MINUTE=0` 关闭）
-- 超限 → `429`
+### 4.5 限流
+- **规划中（当前未实现）**：原文档声明的 `RATE_LIMIT_PER_MINUTE` 尚未实现，接口当前无限流
 
 ## 5. 快速试用（curl）
 

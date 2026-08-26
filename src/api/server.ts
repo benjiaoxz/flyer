@@ -70,7 +70,7 @@ export function buildApi(agent: Agent) {
             userUploads.set(callerUserId, fileId);
             logger.info(`[对话附件] ${part.filename} (${buf.length} bytes, user=${callerUserId})`);
           }
-          tableText = tableToCsv(buf, String(part.filename ?? ""));
+          tableText = await tableToCsv(buf, String(part.filename ?? ""));
         } else if (part.fieldname === "text") {
           text = String(part.value ?? "");
         } else if (part.fieldname === "thread_id") {
@@ -198,13 +198,13 @@ export function readUploadFile(fileId: string): Buffer | null {
 }
 
 /** 表格文件 → CSV 文本（网关区分"表格"与"文字描述"：表格进 table_text，文字进 user_text） */
-function tableToCsv(buf: Buffer, filename: string): string {
+async function tableToCsv(buf: Buffer, filename: string): Promise<string> {
   const lower = filename.toLowerCase();
   let parsed: ParsedTable;
   try {
     parsed = lower.endsWith(".csv") || lower.endsWith(".txt")
       ? parseCsvText(buf.toString("utf8"))
-      : parseExcelFile(buf);
+      : await parseExcelFile(buf);
   } catch {
     return "";
   }

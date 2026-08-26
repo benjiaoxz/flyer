@@ -148,9 +148,9 @@ async function parseBatchItems(
       // 读上传文件
       const { getLatestUpload, readUploadFile } = await import("../../api/server.js");
       const fileId = getLatestUpload(userId);
-      const buf = fileId ? readUploadFile(fileId) : null;
+      const buf = fileId ? await readUploadFile(fileId) : null;
       if (!buf) return { items: [], error: "未找到上传的文件（请先在页面上传 Excel）" };
-      parsed = parseExcelFile(buf);
+      parsed = await parseExcelFile(buf);
     } else {
       // 解析粘贴文本
       parsed = parseCsvText(tableText);

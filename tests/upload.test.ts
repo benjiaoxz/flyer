@@ -6,7 +6,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import { buildApi } from "../src/api/server.js";
 import { Agent } from "../src/core/agent.js";
@@ -67,14 +67,14 @@ describe("/api/chat multipart（表格+文字一次打包）", () => {
   });
 
   it("Excel 文件 → 解析为 CSV 表格文本", async () => {
-    // 用 xlsx 包生成真实 xlsx buffer
-    const ws = XLSX.utils.aoa_to_sheet([["名称", "价格"], ["鞋X", 300]]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-    const buf = XLSX.write(wb, { type: "buffer" }) as Uint8Array;
+    // 用 exceljs 生成真实 xlsx buffer
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Sheet1");
+    ws.addRows([["名称", "价格"], ["鞋X", 300]]);
+    const buf = await wb.xlsx.writeBuffer();
     const { status, body } = await multipartChat(
       { text: "批量调整价格", thread_id: "u-2" },
-      { name: "改价.xlsx", content: buf, type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+      { name: "改价.xlsx", content: new Uint8Array(buf as ArrayBuffer), type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
     );
     expect(status).toBe(200);
     expect(body.output).toContain("text=[批量调整价格]");

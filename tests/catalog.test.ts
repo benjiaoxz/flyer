@@ -1,7 +1,7 @@
 /** catalog 技能测试：上架/查询/改价/下架（mock 业务系统 API） */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 import { config } from "../src/core/config.js";
 import type { GenericState, IntentResult } from "../src/types/index.js";
@@ -9,15 +9,15 @@ import type { GenericState, IntentResult } from "../src/types/index.js";
 // 顶层 mock：读上传文件（vitest 要求 vi.mock 在模块顶层，否则未来版本报错）
 vi.mock("../src/api/server.js", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../src/api/server.js")>();
+  // 预生成 xlsx buffer（exceljs 异步写，mock 工厂内 await 一次，闭包同步返回）
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Sheet1");
+  ws.addRows([["名称", "价格", "库存"], ["上传鞋A", 300, 30]]);
+  const buf = await wb.xlsx.writeBuffer();
   return {
     ...mod,
     getLatestUpload: () => "test-file",
-    readUploadFile: () => {
-      const ws = XLSX.utils.aoa_to_sheet([["名称", "价格", "库存"], ["上传鞋A", 300, 30]]);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-      return XLSX.write(wb, { type: "buffer" }) as Buffer;
-    },
+    readUploadFile: () => Buffer.from(buf),
   };
 });
 
@@ -660,22 +660,21 @@ describe("catalog 上传文件批量上架", () => {
 
   it("Excel 表头不在第一行（标题行/合并单元格）→ 仍能定位表头并批量上架", async () => {
     const { parseExcelFile } = await import("../src/tools/excel.js");
-    // 模拟用户真实表格：第一行是标题"表格 1"，第二行才是表头（名称/价格/库存/状态）
-    const ws = XLSX.utils.aoa_to_sheet([
-      ["表格 1"],
+    // 模拟用户真实表格：第一行是标题"表格 1"（仅一个非空格），第二行才是表头
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Sheet1");
+    ws.addRows([
+      ["表格 1", "", "", "", ""],
       ["", "名称", "价格", "库存", "状态"],
       ["", "标题表鞋A", 120, 12, "上架"],
       ["", "标题表鞋B", 220, 22, "上架"],
     ]);
-    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } }]; // 标题行合并单元格
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-    const buf = XLSX.write(wb, { type: "buffer" }) as Buffer;
-    const t = parseExcelFile(buf);
-    expect(t.headers).toContain("名称");
-    expect(t.headers).toContain("价格");
-    expect(t.rows).toHaveLength(2);
-    expect(t.rows[0].name ?? t.rows[0]["名称"]).toBe("标题表鞋A");
+    const buf = await wb.xlsx.writeBuffer();
+    const table = await parseExcelFile(buf);
+    expect(table.headers).toContain("名称");
+    expect(table.headers).toContain("价格");
+    expect(table.rows).toHaveLength(2);
+    expect(table.rows[0].name ?? table.rows[0]["名称"]).toBe("标题表鞋A");
   });
 });
 

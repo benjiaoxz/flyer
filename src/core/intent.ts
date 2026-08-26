@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { cosineSimilarity } from "./cache.js";
 import { config } from "./config.js";
-import { embedText, getEmbedder } from "./embedding.js";
+import { embedText } from "./embedding.js";
 import { usage } from "./usage.js";
 import { logger } from "./log.js";
 import { SkillRegistry } from "./registry.js";
@@ -143,18 +143,14 @@ export class IntentRecognizer {
 
   /** 技能代表向量（缓存）：description + trigger_keywords 拼接 embedding */
   private async skillVector(skill: Skill): Promise<number[] | null> {
-    // 缓存 key 含 embedding provider：不同模型向量不可比，切换 provider 后旧缓存自动失效
-    const emb = getEmbedder();
-    const embName = emb ? emb.name() : "noembed";
-    const key = `${skill.manifest.id}:${embName}`;
-    if (this.skillVectors.has(key)) {
-      return this.skillVectors.get(key) ?? null;
+    if (this.skillVectors.has(skill.manifest.id)) {
+      return this.skillVectors.get(skill.manifest.id) ?? null;
     }
     // 代表向量：意图描述（语义最丰富）优先，回落 description + keywords
     const intentDesc = Object.values(skill.manifest.intent_descriptions ?? {}).join(" ");
     const seed = intentDesc || [skill.manifest.description, ...(skill.manifest.trigger_keywords ?? [])].join(" ");
     const vec = await embedText(seed);
-    this.skillVectors.set(key, vec);
+    this.skillVectors.set(skill.manifest.id, vec);
     return vec;
   }
 

@@ -95,29 +95,6 @@ function checkHygiene(): void {
   report("无 TODO/FIXME 残留", todo === 0, todo ? `${todo} 处` : "干净");
 }
 
-// ---------------------------------------------------------------- 3.5 embedding 配置合法性
-function checkEmbeddingConfig(): void {
-  console.log("\n[3.5] embedding 配置合法性");
-  // 直接读 .env（脚本不 import config，保持独立）
-  const envFile = existsSync(`${ROOT}.env`) ? readFileSync(`${ROOT}.env`, "utf8") : "";
-  const get = (k: string): string => {
-    const m = envFile.match(new RegExp(`^${k}=(.+)$`, "m"));
-    return m?.[1]?.trim() ?? "";
-  };
-  const provider = get("EMBEDDING_PROVIDER") || "none";
-  const valid = ["", "none", "ollama", "cloud"].includes(provider);
-  report("EMBEDDING_PROVIDER 枚举合法", valid, `当前=${provider || "none（缓存禁用）"}`);
-  if (provider === "cloud") {
-    const hasKey = Boolean(get("EMBEDDING_CLOUD_API_KEY"));
-    const hasUrl = Boolean(get("EMBEDDING_CLOUD_BASE_URL"));
-    report("cloud 模式 API key 已配置", hasKey, hasKey ? "" : "缺 EMBEDDING_CLOUD_API_KEY");
-    warn(hasUrl ? "cloud baseUrl 已配置" : "cloud baseUrl 未配置（缺省 openai 兼容 /embeddings）");
-  } else if (provider === "ollama") {
-    const hasUrl = Boolean(get("EMBEDDING_OLLAMA_URL"));
-    warn(hasUrl ? `ollama URL=${get("EMBEDDING_OLLAMA_URL")}` : "ollama URL 缺省 localhost:11434");
-  }
-}
-
 // ---------------------------------------------------------------- 4. 依赖健康（仅 CI）
 function checkDeps(): void {
   if (!inCI) {
@@ -145,7 +122,6 @@ console.log(`项目健康审计（${inCI ? "CI 模式" : "本地模式"}）`);
 checkDocImplConsistency();
 checkConfigCoverage();
 checkHygiene();
-checkEmbeddingConfig();
 checkDeps();
 
 console.log(`\n结果：${failures === 0 ? "✅ 通过" : `❌ ${failures} 项失败`}（${warnings} 项警告）`);

@@ -112,8 +112,13 @@ function checkDeps(): void {
       warn("npm audit 当前环境不可用（registry 不支持 audit 端点），CI 官方源可正常执行");
       return;
     }
-    const found = msg.match(/found (\d+) vulnerabilities/)?.[1] ?? "?";
-    report("npm audit 无高危漏洞", false, `found ${found} vulnerabilities`);
+    // npm 输出格式兼容：老版 "found N vulnerabilities" / npm10+ "N high severity vulnerability"
+    const found = msg.match(/found (\d+) vulnerabilities/)?.[1]
+      ?? msg.match(/(\d+) high severity vulnerability/)?.[1]
+      ?? msg.match(/(\d+) moderate severity vulnerability/)?.[1]
+      ?? "?";
+    const noFix = /No fix available/.test(msg) ? "（无修复版本）" : "";
+    report("npm audit 无高危漏洞", false, `发现 ${found} 个漏洞${noFix}`);
   }
 }
 

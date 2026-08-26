@@ -102,9 +102,12 @@ function checkDeps(): void {
     return;
   }
   console.log("\n[4] 依赖健康（npm audit）");
+  // --audit-level=high：exit 0 = 无高危漏洞（可能有中低危，仅提示）；exit 非零 = 有 high+（阻断）
   try {
     const out = execSync("npm audit --audit-level=high 2>&1", { cwd: ROOT, encoding: "utf8" });
-    report("npm audit 无高危漏洞", out.includes("found 0"), out.trim().split("\n").pop());
+    // exit 0：无 high。输出可能含中低危报告（"N moderate severity vulnerabilities"）
+    const low = out.match(/(\d+) (moderate|low) severity vulnerabilities?/)?.[1];
+    report("npm audit 无高危漏洞", true, low ? `有 ${low} 个中低危（不达 high 门禁，可择期处理）` : "无漏洞");
   } catch (e) {
     const msg = String(e.stdout || e.message);
     // 环境不支持 audit（镜像源无 audit 端点/网络问题）→ 提示不阻断；CI 官方 registry 可正常执行
@@ -112,13 +115,13 @@ function checkDeps(): void {
       warn("npm audit 当前环境不可用（registry 不支持 audit 端点），CI 官方源可正常执行");
       return;
     }
-    // npm 输出格式兼容：老版 "found N vulnerabilities" / npm10+ "N high severity vulnerability"
+    // exit 非零 = 有 high+ 漏洞（npm 输出格式：老版 "found N vulnerabilities" / npm10+ "N high severity vulnerability"）
     const found = msg.match(/found (\d+) vulnerabilities/)?.[1]
       ?? msg.match(/(\d+) high severity vulnerability/)?.[1]
-      ?? msg.match(/(\d+) moderate severity vulnerability/)?.[1]
+      ?? msg.match(/(\d+) critical severity vulnerability/)?.[1]
       ?? "?";
     const noFix = /No fix available/.test(msg) ? "（无修复版本）" : "";
-    report("npm audit 无高危漏洞", false, `发现 ${found} 个漏洞${noFix}`);
+    report("npm audit 无高危漏洞", false, `发现 ${found} 个高危漏洞${noFix}`);
   }
 }
 
